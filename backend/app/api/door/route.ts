@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// OPTIONS handler (already good)
+// Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -15,16 +15,16 @@ export async function OPTIONS() {
   });
 }
 
-// GET handler to fetch latest building
+// Handle GET requests - fetch latest building
 export async function GET() {
   try {
     const latestBuilding = await prisma.building.findFirst({
       orderBy: {
-        idBuilding: 'desc'
+        idBuilding: 'desc',
       },
       include: {
-        Door: true
-      }
+        Door: true,
+      },
     });
 
     if (!latestBuilding) {
@@ -32,8 +32,8 @@ export async function GET() {
         status: 404,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json"
-        }
+          "Content-Type": "application/json",
+        },
       });
     }
 
@@ -44,39 +44,52 @@ export async function GET() {
         long: latestBuilding.long,
         information: latestBuilding.information,
         doorCount: latestBuilding.Door.length,
-        language: latestBuilding.Door[0]?.language || 'Unknown'
-      }
+        language: latestBuilding.Door[0]?.language || 'Unknown',
+      },
     }), {
       status: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     });
   } catch (error) {
-    console.error('Error fetching latest building:', error);
+    console.error('GET Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     });
   }
 }
 
-// POST handler to create building and doors
+// Handle POST requests - create building and doors
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
+    const bodyText = await req.text(); // Read raw text
+    if (!bodyText) {
+      return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
+        status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    const data = JSON.parse(bodyText); // Safely parse JSON
+
+    console.log("Received data:", data); // Debug log for Vercel logs
 
     if (!data.lat || !data.long) {
       return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude required' }), {
         status: 400,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json"
-        }
+          "Content-Type": "application/json",
+        },
       });
     }
 
@@ -103,17 +116,17 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     });
   } catch (error) {
-    console.error(error);
+    console.error('POST Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     });
   }
 }
