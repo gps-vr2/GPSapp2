@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
@@ -11,7 +11,8 @@ const Map = dynamic(() => import('../../components/Map'), {
   ),
 });
 
-const MapAddPage: React.FC = () => {
+// Create a separate component for the search params logic
+const MapAddContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -98,7 +99,7 @@ const MapAddPage: React.FC = () => {
             showDraggablePin={true}
             onPositionChange={handlePinMove}
             onMapDoubleClick={handleMapDoubleClick}
-            mapView={mapView} // ← Pass the prop
+            mapView={mapView}
           />
         </div>
 
@@ -133,6 +134,22 @@ const MapAddPage: React.FC = () => {
         </div>
       </div>
     </>
+  );
+};
+
+// Loading component for suspense fallback
+const LoadingSpinner: React.FC = () => (
+  <div className="h-screen w-full flex items-center justify-center">
+    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-700"></div>
+  </div>
+);
+
+// Main component with Suspense boundary
+const MapAddPage: React.FC = () => {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <MapAddContent />
+    </Suspense>
   );
 };
 
