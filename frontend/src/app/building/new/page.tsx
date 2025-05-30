@@ -60,7 +60,7 @@ const BuildingNewContent: React.FC = () => {
       };
 
       // Call your API route on the backend server
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/door`, {
+      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
