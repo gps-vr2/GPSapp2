@@ -13,7 +13,7 @@ interface BuildingFormProps {
     addressInfo: string[];
   };
   position: [number, number];
-  onFormChange: (field: string, value: any, index?: number) => void;
+  onFormChange: (field: string, value: string | number, index?: number) => void;
   onGpsChange: (gps: string) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -88,8 +88,8 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
             <option value="English">English</option>
             <option value="Tamil">Tamil</option>
             <option value="Hindi">Hindi</option>
-            <option value="Hindi">Telugu</option>
-            <option value="Hindi">Malayalam</option>
+            <option value="Telugu">Telugu</option>
+            <option value="Malayalam">Malayalam</option>
           </select>
           <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
             <svg

@@ -2,13 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import BuildingForm from '../../components/BuildingForm';
-
-const Map = dynamic(() => import('../../components/Map'), {
-  ssr: false,
-  loading: () => <div className="h-64 w-full flex items-center justify-center">Loading map...</div>
-});
 
 const BuildingNewPage: React.FC = () => {
   const router = useRouter();

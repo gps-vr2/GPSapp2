@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import 'leaflet/dist/leaflet.css';
 
 interface MapProps {
@@ -13,7 +13,7 @@ interface MapProps {
   height?: string;
   onPositionChange?: (position: [number, number]) => void;
   onMapDoubleClick?: (position: [number, number]) => void;
-  mapView?: 'map' | 'satellite'; // new
+  mapView?: 'map' | 'satellite';
 }
 
 const Map: React.FC<MapProps> = ({
@@ -31,15 +31,26 @@ const Map: React.FC<MapProps> = ({
   mapView = 'map',
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const tileLayerRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
-  const pinMarkersRef = useRef<any[]>([]); // for pins
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const pinMarkersRef = useRef<L.Marker[]>([]);
+
+  // Memoize handlers to prevent unnecessary re-renders
+  const handlePositionChange = useCallback((position: [number, number]) => {
+    onPositionChange?.(position);
+  }, [onPositionChange]);
+
+  const handleMapDoubleClick = useCallback((position: [number, number]) => {
+    onMapDoubleClick?.(position);
+  }, [onMapDoubleClick]);
 
   useEffect(() => {
     if (!mapRef.current) return;
 
-    import('leaflet').then((L) => {
+    const initializeMap = async () => {
+      const L = await import('leaflet');
+      
       if (mapInstanceRef.current) return;
 
       const map = L.map(mapRef.current!).setView(center, zoom);
@@ -47,7 +58,7 @@ const Map: React.FC<MapProps> = ({
 
       // Choose base layer
       const getTileLayer = () =>
-        mapView=== 'satellite'
+        mapView === 'satellite'
           ? L.tileLayer(
               'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
               { attribution: 'Tiles © Esri' }
@@ -91,10 +102,10 @@ const Map: React.FC<MapProps> = ({
 
         markerRef.current = marker;
 
-        if (showDraggablePin && onPositionChange) {
+        if (showDraggablePin && handlePositionChange) {
           marker.on('dragend', () => {
             const pos = marker.getLatLng();
-            onPositionChange([pos.lat, pos.lng]);
+            handlePositionChange([pos.lat, pos.lng]);
           });
         }
       }
@@ -119,20 +130,22 @@ const Map: React.FC<MapProps> = ({
       });
 
       // Double-click to move marker
-      if (draggable && (onPositionChange || onMapDoubleClick)) {
+      if (draggable && (handlePositionChange || handleMapDoubleClick)) {
         map.doubleClickZoom.disable();
 
         map.on('dblclick', (e) => {
           const { lat, lng } = e.latlng;
-          onMapDoubleClick?.([lat, lng]);
-          onPositionChange?.([lat, lng]);
+          handleMapDoubleClick?.([lat, lng]);
+          handlePositionChange?.([lat, lng]);
 
           if (markerRef.current) {
             markerRef.current.setLatLng([lat, lng]);
           }
         });
       }
-    });
+    };
+
+    initializeMap();
 
     return () => {
       if (mapInstanceRef.current) {
@@ -144,7 +157,7 @@ const Map: React.FC<MapProps> = ({
         pinMarkersRef.current = [];
       }
     };
-  }, []);
+  }, [center, zoom, draggable, showMarker, showDraggablePin, markerPosition, pins, handlePositionChange, handleMapDoubleClick, mapView]);
 
   // Update view on center or zoom change
   useEffect(() => {
@@ -153,7 +166,7 @@ const Map: React.FC<MapProps> = ({
     }
   }, [center, zoom]);
 
-  // Update tile layer on mapType change
+  // Update tile layer on mapView change
   useEffect(() => {
     if (mapInstanceRef.current && tileLayerRef.current) {
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
@@ -170,7 +183,7 @@ const Map: React.FC<MapProps> = ({
                   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
               });
 
-        tileLayerRef.current.addTo(mapInstanceRef.current);
+        tileLayerRef.current!.addTo(mapInstanceRef.current!);
       });
     }
   }, [mapView]);

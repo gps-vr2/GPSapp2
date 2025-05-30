@@ -7,7 +7,6 @@ interface DraggablePinProps {
 
 const DraggablePin: React.FC<DraggablePinProps> = ({ position, onDrag }) => {
   const [isDragging, setIsDragging] = React.useState(false);
-  const [pinPosition, setPinPosition] = React.useState<[number, number]>(position);
   
   // This component is primarily used by the Map component which already handles
   // the dragging functionality through Leaflet. This component provides a visual
@@ -29,7 +28,6 @@ const DraggablePin: React.FC<DraggablePinProps> = ({ position, onDrag }) => {
         position[1] + (e.movementX * 0.00001)
       ];
       
-      setPinPosition(newPosition);
       if (onDrag) {
         onDrag(newPosition);
       }
