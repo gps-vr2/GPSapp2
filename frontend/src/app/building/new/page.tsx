@@ -65,7 +65,7 @@ const BuildingNewPage: React.FC = () => {
       };
 
       // Call your API route on the backend server
-      const response = await fetch('http://localhost:3001/api/door', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/door`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
