@@ -18,6 +18,8 @@ const BuildingNewPage: React.FC = () => {
 
   const [position, setPosition] = useState<[number, number] | null>(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [showErrorMessage, setShowErrorMessage] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     gps: '',
@@ -46,16 +48,57 @@ const BuildingNewPage: React.FC = () => {
     router.push('/');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!position) return;
 
-    // Simulate saving, e.g., calling an API if needed
-    setShowSuccessMessage(true);
+    setIsLoading(true);
+    setShowErrorMessage(false);
 
-    // After 2 seconds, redirect to home
-    setTimeout(() => {
-      router.push('/');
-    }, 2000);
+    try {
+      // Prepare data for API call
+      const apiData = {
+        lat: position[0],
+        long: position[1],
+        info: formData.addressInfo.join(', '), // Combine all address info
+        numberOfDoors: formData.numberOfDoors,
+        language: formData.language
+      };
+
+      // Call your API route on the backend server
+      const response = await fetch('http://localhost:3001/api/door', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save building');
+      }
+
+      const result = await response.json();
+      console.log('Building saved:', result);
+
+      // Show success message
+      setShowSuccessMessage(true);
+
+      // After 2 seconds, redirect to home
+      setTimeout(() => {
+        router.push('/');
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error saving building:', error);
+      setShowErrorMessage(true);
+      
+      // Hide error message after 3 seconds
+      setTimeout(() => {
+        setShowErrorMessage(false);
+      }, 3000);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleFormChange = (field: string, value: string | number, index?: number) => {
@@ -123,16 +166,30 @@ const BuildingNewPage: React.FC = () => {
           <button onClick={handleReturnToHome} className="px-4 py-2 mr-2 bg-gray-200 rounded-md">
             Cancel
           </button>
-          <button onClick={handleSave} className="px-4 py-2 bg-green-100 text-green-800 rounded-md">
-            Save
+          <button 
+            onClick={handleSave} 
+            disabled={isLoading}
+            className="px-4 py-2 bg-green-100 text-green-800 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
+      {/* Success Message */}
       {showSuccessMessage && (
         <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-70 z-[9999]">
-          <div className="bg-white p-4 rounded-md shadow-xl">
+          <div className="bg-white p-4 rounded-md shadow-xl border border-green-200">
             <p className="text-green-600 font-bold">Building saved successfully!</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {showErrorMessage && (
+        <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-70 z-[9999]">
+          <div className="bg-white p-4 rounded-md shadow-xl border border-red-200">
+            <p className="text-red-600 font-bold">Error saving building. Please try again.</p>
           </div>
         </div>
       )}
