@@ -44,7 +44,7 @@ export async function GET() {
         long: latestBuilding.long,
         information: latestBuilding.information,
         doorCount: latestBuilding.Door.length,
-        language: latestBuilding.Door[0]?.language || 'Unknown',
+        language: latestBuilding.Door[0]?.language ?? 'Unknown',
       },
     }), {
       status: 200,
@@ -62,13 +62,16 @@ export async function GET() {
         "Content-Type": "application/json",
       },
     });
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
 // Handle POST requests - create building and doors
 export async function POST(req: NextRequest) {
   try {
-    const bodyText = await req.text(); // Read raw text
+    const bodyText = await req.text();
+
     if (!bodyText) {
       return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
         status: 400,
@@ -79,12 +82,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const data = JSON.parse(bodyText); // Safely parse JSON
+    const data = JSON.parse(bodyText);
+    console.log("Received data:", data);
 
-    console.log("Received data:", data); // Debug log for Vercel logs
+    const { lat, long, language, numberOfDoors, info } = data;
 
-    if (!data.lat || !data.long) {
-      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude required' }), {
+    if (typeof lat !== 'number' || typeof long !== 'number') {
+      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
         status: 400,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -95,16 +99,16 @@ export async function POST(req: NextRequest) {
 
     const building = await prisma.building.create({
       data: {
-        lat: data.lat,
-        long: data.long,
-        information: data.info,
+        lat,
+        long,
+        information: info,
         territory_id: 1,
       },
     });
 
-    const doors = Array.from({ length: data.numberOfDoors || 1 }).map(() => ({
-      language: data.language,
-      information_name: data.info,
+    const doors = Array.from({ length: numberOfDoors || 1 }).map(() => ({
+      language: language ?? 'Unknown',
+      information_name: info,
       building_id: building.idBuilding,
       id_cong_app: 1,
       id_cong_lang: 1,
@@ -128,5 +132,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
     });
+  } finally {
+    await prisma.$disconnect();
   }
 }
