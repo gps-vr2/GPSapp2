@@ -13,12 +13,10 @@ const Map = dynamic(() => import('../../components/Map'), {
 const MapConfirmContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mapType, setMapType] = useState<'map' | 'satellite'>('map');
+  const [mapView, setMapView] = useState<'map' | 'satellite'>('map');
   const [position, setPosition] = useState<[number, number] | null>(null);
   const [showCoordinates, setShowCoordinates] = useState<boolean>(true);
-  const [currentPage] = useState<number>(3);
-  const totalPages = 5;
-
+  
   useEffect(() => {
     const latParam = searchParams.get('lat');
     const lngParam = searchParams.get('lng');
@@ -77,17 +75,17 @@ const MapConfirmContent: React.FC = () => {
 
         <div className="flex space-x-1 bg-purple-700">
          <button
-          onClick={() => setMapType('map')}
+          onClick={() => setMapView('map')}
           className={`flex-1 py-2 font-medium border-b-3 ${
-            mapType === 'map' ? 'border-white text-white' : 'border-transparent text-white'
+            mapView === 'map' ? 'border-white text-white' : 'border-transparent text-white'
           }`}
         >
           Map
         </button>
         <button
-          onClick={() => setMapType('satellite')}
+          onClick={() => setMapView('satellite')}
           className={`flex-1 py-2 font-medium border-b-3 ${
-            mapType === 'satellite' ? 'border-white text-white' : 'border-transparent text-white'
+            mapView === 'satellite' ? 'border-white text-white' : 'border-transparent text-white'
           }`}
         >
           Satellite
@@ -124,12 +122,13 @@ const MapConfirmContent: React.FC = () => {
             draggable={false}
             showMarker={true}
             markerPosition={position}
+            mapView={mapView}
           />
         </div>
 
         {/* Buttons container */}
         <div
-          className="absolute bottom-16 right-6 flex flex-col space-y-4"
+          className="absolute bottom-30 right-6 flex flex-col space-y-7"
           style={{ zIndex: 9999 }}
         >
           <button
@@ -162,12 +161,7 @@ const MapConfirmContent: React.FC = () => {
           </button>
         </div>
 
-        <div
-          className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-black text-white px-4 py-1 rounded-full"
-          style={{ zIndex: 9999 }}
-        >
-          {currentPage} / {totalPages}
-        </div>
+       
       </div>
     </>
   );

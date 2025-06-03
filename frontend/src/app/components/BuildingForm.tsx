@@ -17,6 +17,7 @@ interface BuildingFormProps {
   onGpsChange: (gps: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  isLoading: boolean;
 }
 
 const BuildingForm: React.FC<BuildingFormProps> = ({
@@ -26,6 +27,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   onGpsChange,
   onSave,
   onCancel,
+  isLoading,
 }) => {
   return (
     <div className="space-y-4">
@@ -150,14 +152,16 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         <button
           onClick={onCancel}
           className="px-4 py-2 mr-2 bg-gray-200 rounded-md"
+          disabled={isLoading}
         >
           Cancel
         </button>
         <button
           onClick={onSave}
           className="px-4 py-2 bg-green-100 text-green-800 rounded-md"
+          disabled={isLoading}
         >
-          Save
+          {isLoading ? 'Saving...' : 'Save'}
         </button>
       </div>
     </div>
