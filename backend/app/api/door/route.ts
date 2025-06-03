@@ -20,6 +20,32 @@ interface DoorData {
   id_cong_lang: number;
 }
 
+// Add type for building with doors
+interface BuildingWithDoors {
+  idBuilding: number;
+  lat: number;
+  long: number;
+  information: string | null;
+  territory_id: number;
+  Door: Array<{
+    language: string;
+    information_name: string | null;
+    building_id: number;
+    id_cong_app: number;
+    id_cong_lang: number;
+  }>;
+}
+
+// Add type for the response building data
+interface BuildingResponse {
+  id: number;
+  lat: number;
+  long: number;
+  information: string | null;
+  doorCount: number;
+  language: string;
+}
+
 // Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, {
@@ -32,19 +58,20 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-// Handle GET requests - fetch latest building
+// Handle GET requests - fetch ALL buildings (not just latest)
 export async function GET(): Promise<NextResponse> {
   try {
-    const latestBuilding = await prisma.building.findFirst({
+    // Get ALL buildings instead of just the first one
+    const buildings = await prisma.building.findMany({
       orderBy: {
         idBuilding: 'desc',
       },
       include: {
         Door: true,
       },
-    });
+    }) as BuildingWithDoors[];
 
-    if (!latestBuilding) {
+    if (!buildings || buildings.length === 0) {
       return new NextResponse(JSON.stringify({ message: 'No buildings found' }), {
         status: 404,
         headers: {
@@ -54,15 +81,18 @@ export async function GET(): Promise<NextResponse> {
       });
     }
 
+    // Map all buildings to the expected format
+    const buildingsData: BuildingResponse[] = buildings.map((building: BuildingWithDoors) => ({
+      id: building.idBuilding,
+      lat: building.lat,
+      long: building.long,
+      information: building.information,
+      doorCount: building.Door.length,
+      language: building.Door[0]?.language ?? 'Unknown',
+    }));
+
     return new NextResponse(JSON.stringify({
-      building: {
-        id: latestBuilding.idBuilding,
-        lat: latestBuilding.lat,
-        long: latestBuilding.long,
-        information: latestBuilding.information,
-        doorCount: latestBuilding.Door.length,
-        language: latestBuilding.Door[0]?.language ?? 'Unknown',
-      },
+      buildings: buildingsData, // Return as 'buildings' array
     }), {
       status: 200,
       headers: {
