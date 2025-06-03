@@ -35,7 +35,8 @@ export async function OPTIONS(): Promise<NextResponse> {
 // Handle GET requests - fetch latest building
 export async function GET(): Promise<NextResponse> {
   try {
-    const latestBuilding = await prisma.building.findMany({
+    // Get ALL buildings instead of just the first one
+    const buildings = await prisma.building.findMany({
       orderBy: {
         idBuilding: 'desc',
       },
@@ -44,7 +45,7 @@ export async function GET(): Promise<NextResponse> {
       },
     });
 
-    if (!latestBuilding) {
+    if (!buildings || buildings.length === 0) {
       return new NextResponse(JSON.stringify({ message: 'No buildings found' }), {
         status: 404,
         headers: {
@@ -54,15 +55,18 @@ export async function GET(): Promise<NextResponse> {
       });
     }
 
+    // Map all buildings to the expected format
+    const buildingsData = buildings.map((building: { idBuilding: any; lat: any; long: any; information: any; Door: string | any[]; }) => ({
+      id: building.idBuilding,
+      lat: building.lat,
+      long: building.long,
+      information: building.information,
+      doorCount: building.Door.length,
+      language: building.Door[0]?.language ?? 'Unknown',
+    }));
+
     return new NextResponse(JSON.stringify({
-      building: {
-        id: latestBuilding.idBuilding,
-        lat: latestBuilding.lat,
-        long: latestBuilding.long,
-        information: latestBuilding.information,
-        doorCount: latestBuilding.Door.length,
-        language: latestBuilding.Door[0]?.language ?? 'Unknown',
-      },
+      buildings: buildingsData, // Return as 'buildings' array
     }), {
       status: 200,
       headers: {
