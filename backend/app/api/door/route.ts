@@ -35,7 +35,7 @@ export async function OPTIONS(): Promise<NextResponse> {
 // Handle GET requests - fetch latest building
 export async function GET(): Promise<NextResponse> {
   try {
-    const latestBuilding = await prisma.building.findFirst({
+    const latestBuilding = await prisma.building.findMany({
       orderBy: {
         idBuilding: 'desc',
       },
