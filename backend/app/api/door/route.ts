@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+console.log('Prisma Client initialized');
 
 // Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS() {
@@ -15,20 +16,26 @@ export async function OPTIONS() {
   });
 }
 
-// Handle GET requests - fetch latest building
+// Handle GET requests - fetch recent buildings
 export async function GET() {
   try {
-    const latestBuilding = await prisma.building.findFirst({
-      orderBy: {
-        idBuilding: 'desc',
+    
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const recentBuildings = await prisma.building.findMany({
+      where: {
+        last_modified: {
+          gte: twentyFourHoursAgo,
+        },
       },
       include: {
         Door: true,
       },
     });
 
-    if (!latestBuilding) {
-      return new NextResponse(JSON.stringify({ message: 'No buildings found' }), {
+    if (!recentBuildings || recentBuildings.length === 0) {
+      console.log('No recent buildings found');
+      return new NextResponse(JSON.stringify({ message: 'No recent buildings found' }), {
         status: 404,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -38,14 +45,14 @@ export async function GET() {
     }
 
     return new NextResponse(JSON.stringify({
-      building: {
-        id: latestBuilding.idBuilding,
-        lat: latestBuilding.lat,
-        long: latestBuilding.long,
-        information: latestBuilding.information,
-        doorCount: latestBuilding.Door.length,
-        language: latestBuilding.Door[0]?.language ?? 'Unknown',
-      },
+      buildings: recentBuildings.map(b => ({
+        id: b.idBuilding,
+        lat: b.lat,
+        long: b.long,
+        information: b.information,
+        lastModified: b.last_modified,
+        doorCount: b.Door.length,
+      })),
     }), {
       status: 200,
       headers: {
@@ -68,12 +75,15 @@ export async function GET() {
 }
 
 // Handle POST requests - create building and doors
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const bodyText = await req.text();
+    const body = await request.json();
+    const { lat, long, info, numberOfDoors, language } = body;
 
-    if (!bodyText) {
-      return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
+    console.log("Received data:", body);
+
+    if (!lat || !long || !language || !numberOfDoors) {
+      return new NextResponse(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -82,13 +92,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const data = JSON.parse(bodyText);
-    console.log("Received data:", data);
+    const anyLang = await prisma.language.findFirst({
+      where: {
+        name: language,
+      },
+    });
 
-    const { lat, long, language, numberOfDoors, info } = data;
+    const anyCong = await prisma.congregation.findFirst();
 
-    if (typeof lat !== 'number' || typeof long !== 'number') {
-      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
+    if (!anyLang || !anyCong) {
+      console.error("Missing Language or Congregation record", { anyLang, anyCong });
+      return new NextResponse(JSON.stringify({ error: "Missing related data" }), {
         status: 400,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -99,40 +113,39 @@ export async function POST(req: NextRequest) {
 
     const building = await prisma.building.create({
       data: {
-        lat,
-        long,
-        information: info,
-        territory_id: 1,
+        lat: lat,
+        long: long,
+        information: info || null,
+        territory_id: null, // Update if needed
       },
     });
 
-    const doors = Array.from({ length: numberOfDoors || 1 }).map(() => ({
-      language: language ?? 'Unknown',
-      information_name: info,
-      building_id: building.idBuilding,
-      id_cong_app: 1,
-      id_cong_lang: 1,
-    }));
+    await prisma.door.createMany({
+      data: Array.from({ length: numberOfDoors || 1 }).map(() => ({
+        language: language,
+        information_name: info || null,
+        building_id: building.idBuilding,
+        id_cong_app: anyCong.idCongregation,
+        id_cong_lang: anyLang.id_cong_app,
+      })),
+    });
 
-    await prisma.door.createMany({ data: doors });
-
-    return new NextResponse(JSON.stringify({ message: 'Saved successfully' }), {
-      status: 200,
+    return new NextResponse(JSON.stringify({ success: true }), {
+      status: 201,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
       },
     });
-  } catch (error) {
-    console.error('POST Error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+
+  } catch (error: any) {
+    console.error("POST /api/door failed:", error);
+    return new NextResponse(JSON.stringify({ error: error.message || "Internal Server Error" }), {
       status: 500,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
       },
     });
-  } finally {
-    await prisma.$disconnect();
   }
 }
