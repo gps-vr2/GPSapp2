@@ -189,7 +189,7 @@ const Map: React.FC<MapProps> = ({
   }, [mapView]);
 
   return (
-    <div className="relative w-full" style={{ height }}>
+    <div className="relative w-full min-h-[100svh]" style={{ height }}>
       <div ref={mapRef} className="w-full h-full"></div>
       {instructionText && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">

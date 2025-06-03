@@ -104,7 +104,7 @@ const MapAddContent: React.FC = () => {
         </div>
 
         {/* Floating Buttons */}
-        <div className="absolute bottom-16 right-6 flex flex-col space-y-4 z-50">
+        <div className="absolute bottom-30 right-6 flex flex-col space-y-6 z-50">
           <button
             onClick={handleConfirm}
             className="w-12 h-12 rounded-full bg-green-100 text-green-800 flex items-center justify-center shadow-lg"
