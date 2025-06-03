@@ -3,8 +3,25 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Type definitions
+interface RequestData {
+  lat: number;
+  long: number;
+  language?: string;
+  numberOfDoors?: number;
+  info?: string;
+}
+
+interface DoorData {
+  language: string;
+  information_name: string | undefined;
+  building_id: number;
+  id_cong_app: number;
+  id_cong_lang: number;
+}
+
 // Handle OPTIONS preflight requests (for CORS)
-export async function OPTIONS() {
+export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, {
     status: 204,
     headers: {
@@ -16,7 +33,7 @@ export async function OPTIONS() {
 }
 
 // Handle GET requests - fetch latest building
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
   try {
     const latestBuilding = await prisma.building.findFirst({
       orderBy: {
@@ -53,7 +70,7 @@ export async function GET() {
         "Content-Type": "application/json",
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('GET Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
@@ -68,7 +85,7 @@ export async function GET() {
 }
 
 // Handle POST requests - create building and doors
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const bodyText = await req.text();
 
@@ -82,7 +99,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const data = JSON.parse(bodyText);
+    const data: RequestData = JSON.parse(bodyText) as RequestData;
     console.log("Received data:", data);
 
     const { lat, long, language, numberOfDoors, info } = data;
@@ -106,7 +123,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const doors = Array.from({ length: numberOfDoors || 1 }).map(() => ({
+    const doors: DoorData[] = Array.from({ length: numberOfDoors || 1 }).map(() => ({
       language: language ?? 'Unknown',
       information_name: info,
       building_id: building.idBuilding,
@@ -123,7 +140,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('POST Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
