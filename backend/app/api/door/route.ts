@@ -10,6 +10,7 @@ interface RequestData {
   language?: string;
   numberOfDoors?: number;
   info?: string;
+  address?: string; // Optional address field
 }
 
 interface DoorData {
@@ -20,12 +21,13 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Add type for building with doors
+// Add type for building with doors - FIXED: Added address field
 interface BuildingWithDoors {
   idBuilding: number;
   lat: number;
   long: number;
   information: string | null;
+  address: string | null; // Added this missing field
   territory_id: number;
   Door: Array<{
     language: string;
@@ -42,6 +44,7 @@ interface BuildingResponse {
   lat: number;
   long: number;
   information: string | null;
+  address: string | null;
   doorCount: number;
   language: string;
 }
@@ -81,12 +84,13 @@ export async function GET(): Promise<NextResponse> {
       });
     }
 
-    // Map all buildings to the expected format
+    // Map all buildings to the expected format - FIXED: Added address field
     const buildingsData: BuildingResponse[] = buildings.map((building: BuildingWithDoors) => ({
       id: building.idBuilding,
       lat: building.lat,
       long: building.long,
       information: building.information,
+      address: building.address, // Added this missing field
       doorCount: building.Door.length,
       language: building.Door[0]?.language ?? 'Unknown',
     }));
@@ -132,7 +136,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const data: RequestData = JSON.parse(bodyText) as RequestData;
     console.log("Received data:", data);
 
-    const { lat, long, language, numberOfDoors, info } = data;
+    const { lat, long, language, numberOfDoors, info, address } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
       return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
@@ -150,6 +154,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         long,
         information: info,
         territory_id: 1,
+        address: address
       },
     });
 
