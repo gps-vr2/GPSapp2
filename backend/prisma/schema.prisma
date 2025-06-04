@@ -14,6 +14,7 @@ model Building {
   information   String?    @db.Text
   territory_id  Int?       @db.UnsignedMediumInt
   last_modified DateTime?  @default(now()) @db.Timestamp(0)
+  address       String?    @db.VarChar(255)
   Territory     Territory? @relation(fields: [territory_id], references: [idTerritory], onDelete: Cascade, map: "idTerritory")
   Door          Door[]
 
@@ -37,6 +38,7 @@ model Door {
   building_id      Int?         @db.UnsignedInt
   id_cong_app      Int          @db.UnsignedMediumInt
   id_cong_lang     Int          @db.UnsignedMediumInt
+  lastModified     DateTime?    @default(now()) @db.Timestamp(0)
   Building         Building?    @relation(fields: [building_id], references: [idBuilding], onDelete: Cascade, map: "idBuilding")
   Congregation     Congregation @relation(fields: [id_cong_app], references: [idCongregation], onDelete: Cascade, map: "id_cong_app1")
   Language         Language     @relation(fields: [id_cong_lang], references: [id_cong_app], onDelete: NoAction, onUpdate: NoAction, map: "id_cong_lang")
