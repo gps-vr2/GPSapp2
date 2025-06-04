@@ -53,7 +53,7 @@ const BuildingNewContent: React.FC = () => {
         long: position[1],
         info: formData.addressInfo.join(', '), // Combine all address info
         numberOfDoors: formData.numberOfDoors,
-        language: formData.language
+        language: formData.language,
         address: formData.buildingAddress 
       };
 
