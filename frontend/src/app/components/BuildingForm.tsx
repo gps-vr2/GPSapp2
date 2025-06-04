@@ -11,6 +11,7 @@ interface BuildingFormProps {
     language: string;
     numberOfDoors: number;
     addressInfo: string[];
+    buildingAddress: string;
   };
   position: [number, number];
   onFormChange: (field: string, value: string | number, index?: number) => void;
@@ -70,11 +71,12 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
       <div className="h-64 border rounded-md overflow-hidden shadow-sm">
         <Map
           center={position}
-          zoom={13}
+          zoom={15}
           showMarker={true}
           markerPosition={position}
           draggable={false}
           showDraggablePin={false}
+      
         />
       </div>
 
@@ -106,7 +108,16 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           </div>
         </div>
       </div>
-
+<div>
+  <label className="block text-sm font-medium mb-1">Building Address*</label>
+  <input
+    type="text"
+    value={formData.buildingAddress}
+    onChange={(e) => onFormChange('buildingAddress', e.target.value)}
+    className="w-full p-2 border rounded-md"
+    placeholder="e.g. 123 Main St, City"
+  />
+</div>
       {/* Number of Doors */}
       <div>
         <label className="block text-sm font-medium mb-1">Number of Doors*</label>
@@ -134,7 +145,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
 
       {/* Address Info for Each Door */}
       <div>
-        <label className="block text-sm font-medium mb-1">Address Info & Comments*</label>
+        <label className="block text-sm font-medium mb-1">Door details*</label>
         {formData.addressInfo.map((address, index) => (
           <input
             key={index}

@@ -20,7 +20,8 @@ const BuildingNewContent: React.FC = () => {
     gps: '',
     language: 'English',
     numberOfDoors: 1,
-    addressInfo: ['']
+    addressInfo: [''],
+    buildingAddress: ''
   });
 
   useEffect(() => {
@@ -53,6 +54,7 @@ const BuildingNewContent: React.FC = () => {
         info: formData.addressInfo.join(', '), // Combine all address info
         numberOfDoors: formData.numberOfDoors,
         language: formData.language
+        address: formData.buildingAddress 
       };
 
       // Call your API route on the backend server
