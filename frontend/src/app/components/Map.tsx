@@ -36,7 +36,6 @@ const Map: React.FC<MapProps> = ({
   const markerRef = useRef<L.Marker | null>(null);
   const pinMarkersRef = useRef<L.Marker[]>([]);
 
-  // Memoize handlers to prevent unnecessary re-renders
   const handlePositionChange = useCallback((position: [number, number]) => {
     onPositionChange?.(position);
   }, [onPositionChange]);
@@ -50,28 +49,30 @@ const Map: React.FC<MapProps> = ({
 
     const initializeMap = async () => {
       const L = await import('leaflet');
-      
+
       if (mapInstanceRef.current) return;
 
       const map = L.map(mapRef.current!).setView(center, zoom);
       mapInstanceRef.current = map;
 
-      // Choose base layer
-      const getTileLayer = () =>
-        mapView === 'satellite'
-          ? L.tileLayer(
-              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-              { attribution: 'Tiles © Esri' }
-            )
-          : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution:
-                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            });
+      // ✅ Ensure the map resizes correctly inside containers like h-64
+      setTimeout(() => {
+        map.invalidateSize();
+        map.setView(center, zoom, { animate: false });
+      }, 100);
 
-      tileLayerRef.current = getTileLayer();
+      // Base tile layer
+      tileLayerRef.current = mapView === 'satellite'
+        ? L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Tiles © Esri' }
+          )
+        : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+          });
+
       tileLayerRef.current.addTo(map);
 
-      // Draggable marker or static marker
       const actualMarkerPos = showMarker ? markerPosition || center : center;
 
       if (showMarker || showDraggablePin) {
@@ -110,7 +111,6 @@ const Map: React.FC<MapProps> = ({
         }
       }
 
-      // Add pins
       pins.forEach((pin) => {
         const pinMarker = L.marker(pin.position, {
           title: pin.title,
@@ -129,18 +129,13 @@ const Map: React.FC<MapProps> = ({
         pinMarkersRef.current.push(pinMarker);
       });
 
-      // Double-click to move marker
       if (draggable && (handlePositionChange || handleMapDoubleClick)) {
         map.doubleClickZoom.disable();
-
         map.on('dblclick', (e) => {
           const { lat, lng } = e.latlng;
           handleMapDoubleClick?.([lat, lng]);
           handlePositionChange?.([lat, lng]);
-
-          if (markerRef.current) {
-            markerRef.current.setLatLng([lat, lng]);
-          }
+          if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
         });
       }
     };
@@ -157,16 +152,25 @@ const Map: React.FC<MapProps> = ({
         pinMarkersRef.current = [];
       }
     };
-  }, [center, zoom, draggable, showMarker, showDraggablePin, markerPosition, pins, handlePositionChange, handleMapDoubleClick, mapView]);
+  }, [
+    center,
+    zoom,
+    draggable,
+    showMarker,
+    showDraggablePin,
+    markerPosition,
+    pins,
+    handlePositionChange,
+    handleMapDoubleClick,
+    mapView,
+  ]);
 
-  // Update view on center or zoom change
   useEffect(() => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setView(center, zoom);
     }
   }, [center, zoom]);
 
-  // Update tile layer on mapView change
   useEffect(() => {
     if (mapInstanceRef.current && tileLayerRef.current) {
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
@@ -179,8 +183,7 @@ const Map: React.FC<MapProps> = ({
                 { attribution: 'Tiles © Esri' }
               )
             : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution:
-                  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                attribution: '&copy; OpenStreetMap contributors',
               });
 
         tileLayerRef.current!.addTo(mapInstanceRef.current!);
@@ -189,8 +192,8 @@ const Map: React.FC<MapProps> = ({
   }, [mapView]);
 
   return (
-    <div className="relative w-full min-h-[100svh]" style={{ height }}>
-      <div ref={mapRef} className="w-full h-full"></div>
+    <div className="relative w-full" style={{ height }}>
+      <div ref={mapRef} className="w-full h-full" />
       {instructionText && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
           <div className="bg-white bg-opacity-70 px-2 py-1 rounded text-red-600 font-bold">
