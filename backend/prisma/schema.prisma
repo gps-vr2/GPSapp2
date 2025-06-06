@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["views"]
 }
 
 datasource db {
@@ -11,9 +12,8 @@ model Building {
   idBuilding    Int        @id @default(autoincrement()) @db.UnsignedInt
   lat           Float      @db.Float
   long          Float      @db.Float
-  information   String?    @db.Text
   territory_id  Int?       @db.UnsignedMediumInt
-  last_modified DateTime?  @default(now()) @db.Timestamp(0)
+  last_modified DateTime   @default(now()) @db.Timestamp(0)
   address       String?    @db.VarChar(255)
   Territory     Territory? @relation(fields: [territory_id], references: [idTerritory], onDelete: Cascade, map: "idTerritory")
   Door          Door[]
@@ -76,4 +76,14 @@ model Territory {
   Congregation    Congregation? @relation(fields: [congregation_id], references: [idCongregation], onDelete: Cascade, map: "idCongregation")
 
   @@index([congregation_id], map: "idCongregation_idx")
+}
+
+/// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+view Building_v_24h {
+  lat           Float    @db.Float
+  long          Float    @db.Float
+  last_modified DateTime @default(now()) @db.Timestamp(0)
+
+  @@id([lat, long, last_modified])
+  @@map("Building_v_24h")
 }

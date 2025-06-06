@@ -3,14 +3,13 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Type definitions
 interface RequestData {
   lat: number;
   long: number;
   language?: string;
   numberOfDoors?: number;
   info?: string;
-  address?: string; // Optional address field
+  address?: string; 
 }
 
 interface DoorData {
@@ -21,13 +20,12 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Add type for building with doors - FIXED: Added address field
+
 interface BuildingWithDoors {
   idBuilding: number;
   lat: number;
   long: number;
-  information: string | null;
-  address: string | null; // Added this missing field
+  address: string | null; 
   territory_id: number;
   Door: Array<{
     language: string;
@@ -43,10 +41,20 @@ interface BuildingResponse {
   id: number;
   lat: number;
   long: number;
-  information: string | null;
   address: string | null;
   doorCount: number;
   language: string;
+}
+interface Building24hView {
+  lat: number;
+  long: number;
+  last_modified: Date;
+}
+
+// Type for coordinates
+interface Coordinates {
+  lat: number;
+  long: number;
 }
 
 // Handle OPTIONS preflight requests (for CORS)
@@ -62,20 +70,20 @@ export async function OPTIONS(): Promise<NextResponse> {
 }
 
 // Handle GET requests - fetch ALL buildings (not just latest)
+// Type definition for the 24-hour view data
+
+
 export async function GET(): Promise<NextResponse> {
   try {
-    // Get ALL buildings instead of just the first one
-    const buildings = await prisma.building.findMany({
-      orderBy: {
-        idBuilding: 'desc',
-      },
-      include: {
-        Door: true,
-      },
-    }) as BuildingWithDoors[];
+    
+    const buildings24h = await prisma.$queryRaw<Building24hView[]>`
+      SELECT lat,  \`long\`, last_modified 
+      FROM Building_v_24h 
+      ORDER BY last_modified DESC
+    `;
 
-    if (!buildings || buildings.length === 0) {
-      return new NextResponse(JSON.stringify({ message: 'No buildings found' }), {
+    if (!buildings24h || buildings24h.length === 0) {
+      return new NextResponse(JSON.stringify({ message: 'No buildings found within 24 hours' }), {
         status: 404,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -84,19 +92,41 @@ export async function GET(): Promise<NextResponse> {
       });
     }
 
-    // Map all buildings to the expected format - FIXED: Added address field
+    // Extract coordinates from the view results
+    const coordinates: Coordinates[] = buildings24h.map((b: Building24hView) => ({ lat: b.lat, long: b.long }));
+
+    // Get full building data with doors for buildings that match the 24h view coordinates
+    const buildings = await prisma.building.findMany({
+      where: {
+        OR: coordinates.map((coord: Coordinates) => ({
+          AND: [
+            { lat: coord.lat },
+            { long: coord.long }
+          ]
+        }))
+      },
+      orderBy: {
+        last_modified: 'desc',
+      },
+      include: {
+        Door: true,
+      },
+    }) as BuildingWithDoors[];
+
+    // Map all buildings to the expected format
     const buildingsData: BuildingResponse[] = buildings.map((building: BuildingWithDoors) => ({
       id: building.idBuilding,
       lat: building.lat,
       long: building.long,
-      information: building.information,
-      address: building.address, // Added this missing field
+      address: building.address,
       doorCount: building.Door.length,
       language: building.Door[0]?.language ?? 'Unknown',
     }));
 
     return new NextResponse(JSON.stringify({
-      buildings: buildingsData, // Return as 'buildings' array
+      buildings: buildingsData,
+      count: buildingsData.length,
+      message: 'Buildings from last 24 hours retrieved successfully'
     }), {
       status: 200,
       headers: {
@@ -117,7 +147,6 @@ export async function GET(): Promise<NextResponse> {
     await prisma.$disconnect();
   }
 }
-
 // Handle POST requests - create building and doors
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -152,7 +181,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: {
         lat,
         long,
-        information: info,
         territory_id: 1,
         address: address
       },
