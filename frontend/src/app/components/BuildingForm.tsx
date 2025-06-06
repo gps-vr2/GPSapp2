@@ -1,8 +1,9 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
+// Load the Map component client-side only
 const Map = dynamic(() => import('./Map'), { ssr: false });
 
 interface BuildingFormProps {
@@ -30,6 +31,103 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   onCancel,
   isLoading,
 }) => {
+  const [mapCenter, setMapCenter] = useState<[number, number]>(position);
+  const [pinPosition, setPinPosition] = useState<[number, number]>(position);
+  const [locationStatus, setLocationStatus] = useState<'loading' | 'success' | 'error' | 'denied'>('loading');
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+
+  // Get user's current location on component mount
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationStatus('error');
+      setMapCenter(position);
+      setPinPosition(position);
+      return;
+    }
+
+    setIsGettingLocation(true);
+    setLocationStatus('loading');
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const userLocation: [number, number] = [
+          pos.coords.latitude,
+          pos.coords.longitude,
+        ];
+        setMapCenter(userLocation);
+        setPinPosition(userLocation);
+        const gpsString = `${userLocation[0].toFixed(6)},${userLocation[1].toFixed(6)}`;
+        onGpsChange(gpsString);
+        setLocationStatus('success');
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        console.log('Geolocation error:', error);
+        
+        // Set status based on error type
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationStatus('denied');
+        } else {
+          setLocationStatus('error');
+        }
+        
+        // Fall back to the provided position
+        setMapCenter(position);
+        setPinPosition(position);
+        setIsGettingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    );
+  };
+
+  const handlePinMove = (newPosition: [number, number]) => {
+    setPinPosition(newPosition);
+    const gpsString = `${newPosition[0].toFixed(6)},${newPosition[1].toFixed(6)}`;
+    onGpsChange(gpsString);
+  };
+
+  const handleMapMove = (lat: number, lng: number) => {
+    setMapCenter([lat, lng]);
+    // Don't update GPS when map moves, only when pin moves
+  };
+
+  const getLocationStatusMessage = () => {
+    switch (locationStatus) {
+      case 'loading':
+        return 'Getting your location...';
+      case 'success':
+        return 'Location found!';
+      case 'denied':
+        return 'Location access denied. Please enable location access or enter GPS coordinates manually.';
+      case 'error':
+        return 'Could not get your location. Please enter GPS coordinates manually.';
+      default:
+        return '';
+    }
+  };
+
+  const getLocationStatusColor = () => {
+    switch (locationStatus) {
+      case 'loading':
+        return 'text-blue-600';
+      case 'success':
+        return 'text-green-600';
+      case 'denied':
+      case 'error':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* GPS Field */}
@@ -41,42 +139,68 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
             value={formData.gps}
             onChange={(e) => onGpsChange(e.target.value)}
             className="w-full p-2 border rounded-md"
+            placeholder="Latitude, Longitude"
           />
-          <div className="ml-2">
-            <svg
-              className="w-6 h-6 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </div>
+          <button
+            onClick={getCurrentLocation}
+            disabled={isGettingLocation}
+            className="ml-2 p-2 bg-purple-700 text-white rounded-md hover:bg-purple-600 disabled:bg-gray-400"
+            title="Get current location"
+          >
+            {isGettingLocation ? (
+              <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            ) : (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            )}
+          </button>
         </div>
+        {/* Location Status Message */}
+        {locationStatus !== 'success' && (
+          <p className={`text-xs mt-1 ${getLocationStatusColor()}`}>
+            {getLocationStatusMessage()}
+          </p>
+        )}
       </div>
 
-      {/* Map */}
-      <div className="h-64 border rounded-md overflow-hidden shadow-sm">
+      {/* Map with Crosshair and pin */}
+      <div className="relative h-64 border rounded-md overflow-hidden shadow-sm">
         <Map
-          center={position}
-          zoom={15}
-          showMarker={true}
-          markerPosition={position}
-          draggable={false}
-          showDraggablePin={false}
-      
+          center={mapCenter}
+          zoom={17}
+          draggable={true}
+          showDraggablePin={true}
+          showViewToggle={true}
+          markerPosition={pinPosition}
+          onPositionChange={handlePinMove}
+          onMapDoubleClick={handlePinMove}
+          onMapMoveEnd={handleMapMove}
+          instructionText="Double-click to move pin"
+        />
+        <img
+          src="/focus.png"
+          alt="crosshair"
+          className="pointer-events-none w-25 h-25 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999]"
         />
       </div>
 
@@ -108,16 +232,19 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           </div>
         </div>
       </div>
-<div>
-  <label className="block text-sm font-medium mb-1">Building Address*</label>
-  <input
-    type="text"
-    value={formData.buildingAddress}
-    onChange={(e) => onFormChange('buildingAddress', e.target.value)}
-    className="w-full p-2 border rounded-md"
-    placeholder="e.g. 123 Main St, City"
-  />
-</div>
+
+      {/* Building Address */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Building Address*</label>
+        <input
+          type="text"
+          value={formData.buildingAddress}
+          onChange={(e) => onFormChange('buildingAddress', e.target.value)}
+          className="w-full p-2 border rounded-md"
+          placeholder="e.g. 123 Main St, City"
+        />
+      </div>
+
       {/* Number of Doors */}
       <div>
         <label className="block text-sm font-medium mb-1">Number of Doors*</label>
@@ -129,21 +256,23 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
             className="flex-1 p-2 border rounded-md"
           />
           <button
-            onClick={() => onFormChange('numberOfDoors', Math.max(0, formData.numberOfDoors - 1))}
-            className="mx-2 px-2 py-1 border rounded-md"
+            onClick={() =>
+              onFormChange('numberOfDoors', Math.max(0, formData.numberOfDoors - 1))
+            }
+            className="mx-2 px-2 py-1 border rounded-md hover:bg-gray-50"
           >
             −
           </button>
           <button
             onClick={() => onFormChange('numberOfDoors', formData.numberOfDoors + 1)}
-            className="px-2 py-1 border rounded-md"
+            className="px-2 py-1 border rounded-md hover:bg-gray-50"
           >
             +
           </button>
         </div>
       </div>
 
-      {/* Address Info for Each Door */}
+      {/* Door Info */}
       <div>
         <label className="block text-sm font-medium mb-1">Door details*</label>
         {formData.addressInfo.map((address, index) => (
@@ -162,14 +291,14 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
       <div className="flex justify-end mt-6">
         <button
           onClick={onCancel}
-          className="px-4 py-2 mr-2 bg-gray-200 rounded-md"
+          className="px-4 py-2 mr-2 bg-gray-200 rounded-md hover:bg-gray-300"
           disabled={isLoading}
         >
           Cancel
         </button>
         <button
           onClick={onSave}
-          className="px-4 py-2 bg-green-100 text-green-800 rounded-md"
+          className="px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200"
           disabled={isLoading}
         >
           {isLoading ? 'Saving...' : 'Save'}
