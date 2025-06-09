@@ -3,6 +3,11 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 
+// Extend HTMLElement to avoid `any` and support Leaflet internal properties
+interface LeafletHTMLElement extends HTMLElement {
+  _leaflet_id?: number;
+}
+
 interface MapProps {
   center: [number, number];
   pins?: { id: number; position: [number, number]; title: string }[];
@@ -18,32 +23,30 @@ interface MapProps {
   mapView?: 'map' | 'satellite';
   onMapMoveEnd?: (lat: number, lng: number) => void;
   showViewToggle?: boolean;
-  userLocation?: [number, number] | null; // New prop for user location
+  userLocation?: [number, number] | null;
 }
 
 const Map: React.FC<MapProps> = ({
   center,
   pins = [],
   zoom,
-  
   showMarker = false,
   showDraggablePin = false,
   markerPosition,
-
   height = '100%',
   onPositionChange,
   onMapDoubleClick,
   mapView = 'map',
   onMapMoveEnd,
   showViewToggle = false,
-  userLocation, // New prop
+  userLocation,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const pinMarkersRef = useRef<L.Marker[]>([]);
-  const userLocationMarkerRef = useRef<L.Marker | null>(null); // New ref for user location marker
+  const userLocationMarkerRef = useRef<L.Marker | null>(null);
   const isInitializedRef = useRef(false);
   const [currentMapView, setCurrentMapView] = useState<'map' | 'satellite'>(mapView);
 
@@ -58,67 +61,55 @@ const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Clean up existing map if it exists
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.off();
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-      markerRef.current = null;
-      tileLayerRef.current = null;
-      pinMarkersRef.current = [];
-      userLocationMarkerRef.current = null; // Reset user location marker
-      isInitializedRef.current = false;
+    // 🧹 Fix "Map container is already initialized"
+    if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
+      delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
     }
 
     const initializeMap = async () => {
       const L = await import('leaflet');
       const map = L.map(mapRef.current!, {
-        minZoom: 1, // Allow full zoom out
-        maxZoom: 20, // Allow high zoom in
+        minZoom: 1,
+        maxZoom: 20,
+        zoomControl: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: false,
+        touchZoom: true,
+        dragging: true,
+        zoomSnap: 1,
+        zoomDelta: 1,
       }).setView(center, zoom);
       mapInstanceRef.current = map;
       isInitializedRef.current = true;
 
-      const getTileLayer = (view: string) => {
-        return view === 'satellite'
+      // Tile layer
+      const getTileLayer = (view: string) =>
+        view === 'satellite'
           ? L.tileLayer(
               'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-              { 
-                attribution: 'Tiles © Esri',
-                minZoom: 1,
-                maxZoom: 20
-              }
+              { attribution: 'Tiles © Esri', minZoom: 1, maxZoom: 20 }
             )
           : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '&copy; OpenStreetMap contributors',
+              attribution: '&copy; Ventu renewable contributors',
               minZoom: 1,
-              maxZoom: 20
+              maxZoom: 20,
             });
-      };
 
       tileLayerRef.current = getTileLayer(currentMapView);
       tileLayerRef.current.addTo(map);
 
-      // Live coordinate update on map move
-      if (onMapMoveEnd) {
-        map.on('moveend', () => {
-          const center = map.getCenter();
-          onMapMoveEnd(center.lat, center.lng);
-        });
-      }
-
-      // Double-click to move marker to clicked location
-      map.doubleClickZoom.disable();
-      map.on('dblclick', (e) => {
-        const clickedPos = [e.latlng.lat, e.latlng.lng] as [number, number];
-        handleMapDoubleClick?.(clickedPos);
-        handlePositionChange?.(clickedPos);
-        if (markerRef.current) {
-          markerRef.current.setLatLng(e.latlng);
-        }
+      map.on('moveend', () => {
+        const center = map.getCenter();
+        onMapMoveEnd?.(center.lat, center.lng);
       });
 
-      // Ensure rendering
+      map.on('dblclick', (e) => {
+        const pos: [number, number] = [e.latlng.lat, e.latlng.lng];
+        handleMapDoubleClick(pos);
+        handlePositionChange(pos);
+        markerRef.current?.setLatLng(e.latlng);
+      });
+
       setTimeout(() => {
         map.invalidateSize();
       }, 100);
@@ -140,7 +131,6 @@ const Map: React.FC<MapProps> = ({
     };
   }, []);
 
-  // Handle center and zoom changes separately
   useEffect(() => {
     if (mapInstanceRef.current && isInitializedRef.current) {
       const currentCenter = mapInstanceRef.current.getCenter();
@@ -155,26 +145,22 @@ const Map: React.FC<MapProps> = ({
     }
   }, [center, zoom]);
 
-  // Handle map view changes
   useEffect(() => {
     if (!mapInstanceRef.current || !tileLayerRef.current || !isInitializedRef.current) return;
 
     const updateTileLayer = async () => {
       const L = await import('leaflet');
       mapInstanceRef.current!.removeLayer(tileLayerRef.current!);
+
       tileLayerRef.current = currentMapView === 'satellite'
         ? L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { 
-              attribution: 'Tiles © Esri',
-              minZoom: 1,
-              maxZoom: 20
-            }
+            { attribution: 'Tiles © Esri', minZoom: 1, maxZoom: 20 }
           )
         : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
+            attribution: '&copy; Ventu renewable contributors',
             minZoom: 1,
-            maxZoom: 20
+            maxZoom: 20,
           });
 
       tileLayerRef.current.addTo(mapInstanceRef.current!);
@@ -183,68 +169,34 @@ const Map: React.FC<MapProps> = ({
     updateTileLayer();
   }, [currentMapView]);
 
-  // Handle callbacks changes
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
-    const map = mapInstanceRef.current;
-    
-    // Remove existing event listeners
-    map.off('moveend');
-    map.off('dblclick');
-
-    // Add new event listeners
-    if (onMapMoveEnd) {
-      map.on('moveend', () => {
-        
-        const center = map.getCenter();
-        onMapMoveEnd(center.lat, center.lng);
-      });
-    }
-
-    map.on('dblclick', (e) => {
-      const clickedPos = [e.latlng.lat, e.latlng.lng] as [number, number];
-      handleMapDoubleClick?.(clickedPos);
-      handlePositionChange?.(clickedPos);
-      if (markerRef.current) {
-        markerRef.current.setLatLng(e.latlng);
-      }
-    });
-  }, [onMapMoveEnd, handleMapDoubleClick, handlePositionChange]);
-
-  // Handle user location marker
-  useEffect(() => {
-    if (!mapInstanceRef.current || !isInitializedRef.current) return;
-
-    const updateUserLocationMarker = async () => {
+    const updateUserMarker = async () => {
       const L = await import('leaflet');
-
-      // Remove existing user location marker
       if (userLocationMarkerRef.current) {
         mapInstanceRef.current!.removeLayer(userLocationMarkerRef.current);
         userLocationMarkerRef.current = null;
       }
 
-      // Add user location marker if userLocation is provided
       if (userLocation) {
-        const userLocationIcon = L.icon({
-          iconUrl: '/xy.png',           // Using xy.png as requested
-          iconSize: [48, 48],           // Adjust size as needed
-          iconAnchor: [24, 24],         // Center anchor for user location
-          popupAnchor: [0, -24],        // Display popup above the marker
+        const userIcon = L.icon({
+          iconUrl: '/xy.png',
+          iconSize: [48, 55],
+          iconAnchor: [24, 48],
+          popupAnchor: [0, -24],
         });
 
-        const userMarker = L.marker(userLocation, {
-          icon: userLocationIcon,
+        userLocationMarkerRef.current = L.marker(userLocation, {
+          icon: userIcon,
           title: 'Your Location',
-        }).addTo(mapInstanceRef.current!)
+        })
+          .addTo(mapInstanceRef.current!)
           .bindPopup('Your Current Location');
-
-        userLocationMarkerRef.current = userMarker;
       }
     };
 
-    updateUserLocationMarker();
+    updateUserMarker();
   }, [userLocation]);
 
   useEffect(() => {
@@ -259,66 +211,57 @@ const Map: React.FC<MapProps> = ({
       }
 
       if (showMarker || showDraggablePin) {
-        const actualMarkerPos = markerPosition || center;
+        const pos = markerPosition || center;
 
-        const markerIcon =  L.icon({
-              iconUrl: '/pin 48px.png',           // Make sure it's served from the public folder
-    iconSize: [48, 48],                 // Since image is square, match original or slightly smaller
-    iconAnchor: [24, 48],               // Bottom-center anchor for correct pin placement
-    popupAnchor: [0, -48],              // Display popup directly above
-    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-    shadowSize: [41, 41],
-    shadowAnchor: [12, 41],
-            });
+        const icon = L.icon({
+          iconUrl: '/xy.png',
+          iconSize: [48, 55],
+          iconAnchor: [24, 48],
+          popupAnchor: [0, -48],
+          shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+          shadowSize: [41, 41],
+          shadowAnchor: [12, 41],
+        });
 
-        const marker = L.marker(actualMarkerPos, {
-          icon: markerIcon,
-          draggable: false, // Disable dragging, only double-click moves pin
+        markerRef.current = L.marker(pos, {
+          icon,
+          draggable: false,
         }).addTo(mapInstanceRef.current!);
-
-        markerRef.current = marker;
-
-        // Remove drag functionality since we only want double-click
-        // Pin stays in place when map is moved
       }
     };
 
     updateMarker();
-  }, [showMarker, showDraggablePin, markerPosition, center, handlePositionChange]);
+  }, [showMarker, showDraggablePin, markerPosition, center]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
     const updatePins = async () => {
       const L = await import('leaflet');
-      
-      // Clear existing pins
-      pinMarkersRef.current.forEach((marker) => {
+
+      pinMarkersRef.current.forEach(marker => {
         mapInstanceRef.current!.removeLayer(marker);
       });
       pinMarkersRef.current = [];
 
-      // Add new pins
-      if (pins.length > 0) {
-        pins.forEach((pin) => {
-          const pinMarker = L.marker(pin.position, {
-              title: pin.title,
-  icon: L.icon({
-    iconUrl: '/pin 48px.png',           // Make sure it's served from the public folder
-    iconSize: [48, 48],                 // Since image is square, match original or slightly smaller
-    iconAnchor: [24, 48],               // Bottom-center anchor for correct pin placement
-    popupAnchor: [0, -48],              // Display popup directly above
-    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-    shadowSize: [41, 41],
-    shadowAnchor: [12, 41],
-            }),
-          })
-            .addTo(mapInstanceRef.current!)
-            .bindPopup(pin.title);
-          
-          pinMarkersRef.current.push(pinMarker);
-        });
-      }
+      pins.forEach(pin => {
+        const pinMarker = L.marker(pin.position, {
+          title: pin.title,
+          icon: L.icon({
+            iconUrl: '/pin 48px.png',
+            iconSize: [48, 48],
+            iconAnchor: [24, 48],
+            popupAnchor: [0, -48],
+            shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+            shadowSize: [41, 41],
+            shadowAnchor: [12, 41],
+          }),
+        })
+          .addTo(mapInstanceRef.current!)
+          .bindPopup(pin.title);
+
+        pinMarkersRef.current.push(pinMarker);
+      });
     };
 
     updatePins();
@@ -331,8 +274,6 @@ const Map: React.FC<MapProps> = ({
   return (
     <div className="relative w-full" style={{ height }}>
       <div ref={mapRef} className="w-full h-full" />
-      
-      {/* Map/Satellite Toggle */}
       {showViewToggle && (
         <div className="absolute top-2 left-2 z-[1000] bg-white rounded-md shadow-md overflow-hidden">
           <button
@@ -357,7 +298,6 @@ const Map: React.FC<MapProps> = ({
           </button>
         </div>
       )}
-
     </div>
   );
 };
