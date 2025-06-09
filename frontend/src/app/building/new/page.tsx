@@ -94,6 +94,16 @@ const BuildingNewContent: React.FC = () => {
     }
   };
 
+  // New function to handle map movement and update GPS coordinates
+  const handleMapMoveEnd = (lat: number, lng: number) => {
+    const newPosition: [number, number] = [lat, lng];
+    setPosition(newPosition);
+    setFormData(prev => ({
+      ...prev,
+      gps: `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    }));
+  };
+
   const handleFormChange = (field: string, value: string | number, index?: number) => {
     if (field === 'addressInfo' && typeof index === 'number') {
       const newAddresses = [...formData.addressInfo];
@@ -153,7 +163,9 @@ const BuildingNewContent: React.FC = () => {
           position={position}
           onSave={handleSave}
           onCancel={handleCancel} 
-          isLoading={isLoading}        />
+          isLoading={isLoading}
+          onMapMoveEnd={handleMapMoveEnd} // Pass the new handler to BuildingForm
+        />
       </div>
 
       {/* Success Message */}

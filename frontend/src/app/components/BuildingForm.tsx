@@ -20,6 +20,7 @@ interface BuildingFormProps {
   onSave: () => void;
   onCancel: () => void;
   isLoading: boolean;
+  onMapMoveEnd?: (lat: number, lng: number) => void; // Add this prop
 }
 
 const BuildingForm: React.FC<BuildingFormProps> = ({
@@ -30,6 +31,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   onSave,
   onCancel,
   isLoading,
+  onMapMoveEnd, // Add this prop
 }) => {
   const [mapCenter, setMapCenter] = useState<[number, number]>(position);
   const [pinPosition, setPinPosition] = useState<[number, number]>(position);
@@ -96,7 +98,10 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
 
   const handleMapMove = (lat: number, lng: number) => {
     setMapCenter([lat, lng]);
-    // Don't update GPS when map moves, only when pin moves
+    // Update GPS coordinates based on crosshair position (map center)
+    if (onMapMoveEnd) {
+      onMapMoveEnd(lat, lng);
+    }
   };
 
   const getLocationStatusMessage = () => {
@@ -195,13 +200,17 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           onPositionChange={handlePinMove}
           onMapDoubleClick={handlePinMove}
           onMapMoveEnd={handleMapMove}
-          instructionText="Double-click to move pin"
+          instructionText="Move map or double-click to update location"
+          height="100%"
         />
         <img
           src="/focus.png"
           alt="crosshair"
           className="pointer-events-none w-25 h-25 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999]"
         />
+        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+          Move map to update GPS coordinates
+        </div>
       </div>
 
       {/* Language Dropdown */}
