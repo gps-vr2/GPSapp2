@@ -39,7 +39,8 @@ const BuildingEditContent: React.FC = () => {
       setIsLoading(true);
       console.log("Fetching building for ID:", buildingId);
   
-      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`);
+      // Fixed: Changed 'id' to 'buildingId' - Using relative URL for now
+      const response = await fetch(`/api/door/${buildingId}`);
   
       if (!response.ok) {
         const errorText = await response.text();
@@ -49,8 +50,10 @@ const BuildingEditContent: React.FC = () => {
   
       const data = await response.json();
       console.log("Fetched data:", data);
+
+      // Store original data for delete functionality
+      setOriginalData(data);
   
-      
       // Set form data from loaded data
       setFormData({
         gps: `${data.lat}, ${data.long}`,
@@ -90,8 +93,8 @@ const BuildingEditContent: React.FC = () => {
         address: formData.buildingAddress 
       };
 
-      // Call your API route to update the building
-      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`, {
+      // Call your API route to update the building - Using relative URL
+      const response = await fetch(`/api/door/${buildingId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -141,8 +144,8 @@ const BuildingEditContent: React.FC = () => {
         original_id: buildingId
       };
 
-      // Save to deleted buildings table
-      const saveDeletedResponse = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/deleted-buildings`, {
+      // Save to deleted buildings table - Using relative URL
+      const saveDeletedResponse = await fetch(`/api/deleted-buildings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -154,8 +157,8 @@ const BuildingEditContent: React.FC = () => {
         throw new Error('Failed to save deleted building data');
       }
 
-      // Now delete from main table
-      const deleteResponse = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`, {
+      // Now delete from main table - Using relative URL
+      const deleteResponse = await fetch(`/api/door/${buildingId}`, {
         method: 'DELETE',
       });
 
