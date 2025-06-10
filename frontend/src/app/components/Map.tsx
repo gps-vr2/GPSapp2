@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 
-// Extend HTMLElement to avoid `any` and support Leaflet internal properties
 interface LeafletHTMLElement extends HTMLElement {
   _leaflet_id?: number;
 }
@@ -61,7 +60,6 @@ const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // 🧹 Fix "Map container is already initialized"
     if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
       delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
     }
@@ -82,7 +80,6 @@ const Map: React.FC<MapProps> = ({
       mapInstanceRef.current = map;
       isInitializedRef.current = true;
 
-      // Tile layer
       const getTileLayer = (view: string) =>
         view === 'satellite'
           ? L.tileLayer(
@@ -258,7 +255,12 @@ const Map: React.FC<MapProps> = ({
           }),
         })
           .addTo(mapInstanceRef.current!)
-          .bindPopup(pin.title);
+          .bindPopup(`
+            <div style="font-size: 13px;">
+              <strong>${pin.title || 'No address'}</strong><br/>
+              <a href="/building/edit?id=${pin.id}" style="color: blue; text-decoration: underline;">✏️ Edit</a>
+            </div>
+          `);
 
         pinMarkersRef.current.push(pinMarker);
       });
