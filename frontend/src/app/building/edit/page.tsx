@@ -1,8 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import BuildingForm from '../../components/BuildingForm';
+
+interface BuildingData {
+  lat: number;
+  long: number;
+  language?: string;
+  numberOfDoors?: number;
+  info?: string;
+  address?: string;
+}
 
 const BuildingEditContent: React.FC = () => {
   const router = useRouter();
@@ -24,15 +33,11 @@ const BuildingEditContent: React.FC = () => {
     buildingAddress: ''
   });
 
-  const [originalData, setOriginalData] = useState<any>(null);
+  const [originalData, setOriginalData] = useState<BuildingData | null>(null);
 
-  useEffect(() => {
-    if (buildingId) {
-      loadBuildingData();
-    }
-  }, [buildingId]);
-
-  const loadBuildingData = async () => {
+  const loadBuildingData = useCallback(async () => {
+    if (!buildingId) return;
+    
     try {
       setIsLoading(true);
       const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`);
@@ -40,7 +45,7 @@ const BuildingEditContent: React.FC = () => {
         throw new Error('Failed to load building data');
       }
 
-      const data = await response.json();
+      const data: BuildingData = await response.json();
       setOriginalData(data);
       setFormData({
         gps: `${data.lat}, ${data.long}`,
@@ -56,7 +61,13 @@ const BuildingEditContent: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [buildingId]);
+
+  useEffect(() => {
+    if (buildingId) {
+      loadBuildingData();
+    }
+  }, [buildingId, loadBuildingData]);
 
   const handleCancel = () => {
     router.back();
@@ -116,7 +127,7 @@ const BuildingEditContent: React.FC = () => {
 
     try {
       const deletedData = {
-        ...(originalData ?? {}),
+        ...originalData,
         deleted_at: new Date().toISOString(),
         deleted_by: 'user',
         original_id: buildingId

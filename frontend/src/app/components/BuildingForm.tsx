@@ -1,7 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 
 // Load the Map component client-side only
 const Map = dynamic(() => import('./Map'), { ssr: false });
@@ -21,6 +22,7 @@ interface BuildingFormProps {
   onCancel: () => void;
   isLoading: boolean;
   onMapMoveEnd?: (lat: number, lng: number) => void;
+  isEditMode?: boolean;
 }
 
 const BuildingForm: React.FC<BuildingFormProps> = ({
@@ -40,11 +42,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   const [mapZoom, setMapZoom] = useState(17);
 
   // Get user's current location on component mount
-  useEffect(() => {
-    getCurrentLocation();
-  }, []);
-
-  const getCurrentLocation = () => {
+  const getCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setLocationStatus('error');
       setMapCenter(position);
@@ -89,7 +87,11 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         maximumAge: 300000 // 5 minutes
       }
     );
-  };
+  }, [position, onGpsChange]);
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, [getCurrentLocation]);
 
   const handlePinMove = (newPosition: [number, number]) => {
     setPinPosition(newPosition);
@@ -97,7 +99,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
     onGpsChange(gpsString);
   };
 
-  const handleMapMove = (lat: number, lng: number) => {
+  const handleMapMove = useCallback((lat: number, lng: number) => {
     const newCenter: [number, number] = [lat, lng];
     setMapCenter(newCenter);
     
@@ -109,7 +111,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
     if (onMapMoveEnd) {
       onMapMoveEnd(lat, lng);
     }
-  };
+  }, [onGpsChange, onMapMoveEnd]);
 
   const getLocationStatusMessage = () => {
     switch (locationStatus) {
@@ -151,6 +153,14 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
       setMapCenter(newPosition);
       setPinPosition(newPosition);
     }
+  };
+
+  const handleZoomIn = () => {
+    setMapZoom(prev => Math.min(20, prev + 1));
+  };
+
+  const handleZoomOut = () => {
+    setMapZoom(prev => Math.max(1, prev - 1));
   };
 
   return (
@@ -227,9 +237,11 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           
           {/* Crosshair overlay - positioned to not interfere with map interactions */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-[1000]">
-            <img
+            <Image
               src="/focus.svg"
               alt="crosshair"
+              width={50}
+              height={50}
               className="w-50 h-50"
               style={{ filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.5))' }}
             />
@@ -243,14 +255,14 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           {/* Zoom controls overlay for better accessibility */}
           <div className="absolute top-2 right-2 flex flex-col bg-white rounded shadow-md overflow-hidden z-[1001]">
             <button
-              onClick={() => setMapZoom(prev => Math.min(20, prev + 1))}
+              onClick={handleZoomIn}
               className="px-2 py-1 text-lg font-bold hover:bg-gray-100 border-b"
               title="Zoom in"
             >
               +
             </button>
             <button
-              onClick={() => setMapZoom(prev => Math.max(1, prev - 1))}
+              onClick={handleZoomOut}
               className="px-2 py-1 text-lg font-bold hover:bg-gray-100"
               title="Zoom out"
             >
