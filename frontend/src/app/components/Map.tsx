@@ -71,7 +71,7 @@ const Map: React.FC<MapProps> = ({
       const map = L.map(mapRef.current!, {
         minZoom: 1,
         maxZoom: 20,
-        zoomControl: true,
+        zoomControl: false,
         scrollWheelZoom: true,
         doubleClickZoom: false,
         touchZoom: true,
