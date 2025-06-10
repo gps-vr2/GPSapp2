@@ -3,16 +3,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
-export const dynamic = 'force-dynamic'; // ✅ THIS FIXES THE TYPE ERROR
+export const dynamic = 'force-dynamic';
 
 const prisma = new PrismaClient();
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id);
+    // Await the params since it's a Promise in Next.js 15+
+    const { id: idParam } = await params;
+    const id = parseInt(idParam);
+    
     if (isNaN(id)) {
       return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
     }
