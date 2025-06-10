@@ -7,15 +7,12 @@ const prisma = new PrismaClient();
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
-    const id = parseInt(params.id);
+    const id = parseInt(context.params.id);
     if (isNaN(id)) {
-      return new NextResponse(JSON.stringify({ error: 'Invalid building ID' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json({ error: 'Invalid building ID' }, { status: 400 });
     }
 
     const building = await prisma.building.findUnique({
@@ -26,10 +23,7 @@ export async function GET(
     });
 
     if (!building) {
-      return new NextResponse(JSON.stringify({ error: 'Building not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json({ error: 'Building not found' }, { status: 404 });
     }
 
     const responseData = {
@@ -42,7 +36,7 @@ export async function GET(
       info: building.Door[0]?.information_name || ''
     };
 
-    return new NextResponse(JSON.stringify(responseData), {
+    return NextResponse.json(responseData, {
       status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -51,7 +45,7 @@ export async function GET(
     });
   } catch (error) {
     console.error('GET /api/door/[id] error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+    return NextResponse.json({ error: 'Internal Server Error' }, {
       status: 500,
       headers: {
         'Access-Control-Allow-Origin': '*',
