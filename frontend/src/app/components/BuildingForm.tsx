@@ -204,9 +204,9 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           height="100%"
         />
         <img
-          src="/focus.png"
+          src="/focus.svg"
           alt="crosshair"
-          className="pointer-events-none w-25 h-25 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999]"
+          className="pointer-events-none w-40 h-40 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999]"
         />
         <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
           Move map to update GPS coordinates

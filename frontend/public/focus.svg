@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="240" height="160" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Extended Center plus sign (4 lines) -->
+  <!-- Vertical white -->
+  <line x1="30" y1="15" x2="30" y2="25" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <!-- Vertical black -->
+  <line x1="30" y1="15" x2="30" y2="25" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+  <!-- Horizontal white -->
+  <line x1="25" y1="20" x2="35" y2="20" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <!-- Horizontal black -->
+  <line x1="25" y1="20" x2="35" y2="20" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+
+  <!-- Top-left corner -->
+  <line x1="2" y1="2" x2="2" y2="10" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="2" y1="2" x2="2" y2="10" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+  <line x1="2" y1="2" x2="10" y2="2" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="2" y1="2" x2="10" y2="2" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+
+  <!-- Top-right corner -->
+  <line x1="58" y1="2" x2="50" y2="2" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="58" y1="2" x2="50" y2="2" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+  <line x1="58" y1="2" x2="58" y2="10" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="58" y1="2" x2="58" y2="10" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+
+  <!-- Bottom-left corner -->
+  <line x1="2" y1="38" x2="2" y2="30" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="2" y1="38" x2="2" y2="30" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+  <line x1="2" y1="38" x2="10" y2="38" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="2" y1="38" x2="10" y2="38" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+
+  <!-- Bottom-right corner -->
+  <line x1="58" y1="38" x2="58" y2="30" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="58" y1="38" x2="58" y2="30" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+  <line x1="58" y1="38" x2="50" y2="38" stroke="white" stroke-width="0.9" stroke-dasharray="2,2"/>
+  <line x1="58" y1="38" x2="50" y2="38" stroke="black" stroke-width="0.9" stroke-dasharray="2,2" stroke-dashoffset="2"/>
+</svg>
