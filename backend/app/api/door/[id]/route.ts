@@ -2,23 +2,22 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import type { NextApiRequestContext } from 'next';
 
 const prisma = new PrismaClient();
 
 export async function GET(
   req: NextRequest,
-  context: { params: { id: string } }
+  { params }: NextApiRequestContext
 ) {
   try {
-    const { id } = context.params;
-    const numericId = parseInt(id);
-
-    if (isNaN(numericId)) {
-      return NextResponse.json({ error: 'Invalid building ID' }, { status: 400 });
+    const id = parseInt(params.id);
+    if (isNaN(id)) {
+      return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
     }
 
     const building = await prisma.building.findUnique({
-      where: { idBuilding: numericId },
+      where: { idBuilding: id },
       include: {
         Door: true,
       },
@@ -28,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: 'Building not found' }, { status: 404 });
     }
 
-    const responseData = {
+    return NextResponse.json({
       id: building.idBuilding,
       lat: building.lat,
       long: building.long,
@@ -36,9 +35,7 @@ export async function GET(
       numberOfDoors: building.Door.length,
       language: building.Door[0]?.language || 'Unknown',
       info: building.Door[0]?.information_name || '',
-    };
-
-    return NextResponse.json(responseData);
+    });
   } catch (error) {
     console.error('GET /api/door/[id] error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
