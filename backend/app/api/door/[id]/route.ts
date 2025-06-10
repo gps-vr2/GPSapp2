@@ -8,15 +8,17 @@ const prisma = new PrismaClient();
 export async function GET(
   req: NextRequest,
   context: { params: { id: string } }
-): Promise<NextResponse> {
+) {
   try {
-    const id = parseInt(context.params.id);
-    if (isNaN(id)) {
+    const { id } = context.params;
+    const numericId = parseInt(id);
+
+    if (isNaN(numericId)) {
       return NextResponse.json({ error: 'Invalid building ID' }, { status: 400 });
     }
 
     const building = await prisma.building.findUnique({
-      where: { idBuilding: id },
+      where: { idBuilding: numericId },
       include: {
         Door: true,
       },
@@ -33,25 +35,13 @@ export async function GET(
       address: building.address,
       numberOfDoors: building.Door.length,
       language: building.Door[0]?.language || 'Unknown',
-      info: building.Door[0]?.information_name || ''
+      info: building.Door[0]?.information_name || '',
     };
 
-    return NextResponse.json(responseData, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json',
-      },
-    });
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error('GET /api/door/[id] error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, {
-      status: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json',
-      },
-    });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   } finally {
     await prisma.$disconnect();
   }
