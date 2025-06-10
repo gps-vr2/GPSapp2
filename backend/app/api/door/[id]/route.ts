@@ -1,17 +1,14 @@
-// app/api/door/[id]/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import type { NextApiRequestContext } from 'next';
 
 const prisma = new PrismaClient();
 
 export async function GET(
   req: NextRequest,
-  { params }: NextApiRequestContext
+  context: { params: { id: string } }
 ) {
   try {
-    const id = parseInt(params.id);
+    const id = parseInt(context.params.id);
     if (isNaN(id)) {
       return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
     }
