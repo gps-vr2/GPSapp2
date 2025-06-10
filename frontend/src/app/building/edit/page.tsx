@@ -4,7 +4,6 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import BuildingForm from '../../components/BuildingForm';
 
-// Create a separate component for the search params logic
 const BuildingEditContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -25,9 +24,8 @@ const BuildingEditContent: React.FC = () => {
     buildingAddress: ''
   });
 
-  const [originalData, setOriginalData] = useState(null);
+  const [originalData, setOriginalData] = useState<any>(null);
 
-  // Load existing building data
   useEffect(() => {
     if (buildingId) {
       loadBuildingData();
@@ -37,24 +35,13 @@ const BuildingEditContent: React.FC = () => {
   const loadBuildingData = async () => {
     try {
       setIsLoading(true);
-      console.log("Fetching building for ID:", buildingId);
-  
-      // Fixed: Changed 'id' to 'buildingId' - Using relative URL for now
-      const response = await fetch(`/api/door/${buildingId}`);
-  
+      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`);
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Fetch failed:", errorText);
         throw new Error('Failed to load building data');
       }
-  
-      const data = await response.json();
-      console.log("Fetched data:", data);
 
-      // Store original data for delete functionality
+      const data = await response.json();
       setOriginalData(data);
-  
-      // Set form data from loaded data
       setFormData({
         gps: `${data.lat}, ${data.long}`,
         language: data.language || 'English',
@@ -62,7 +49,6 @@ const BuildingEditContent: React.FC = () => {
         addressInfo: data.info ? data.info.split(', ') : [''],
         buildingAddress: data.address || ''
       });
-
       setPosition([data.lat, data.long]);
     } catch (error) {
       console.error('Error loading building data:', error);
@@ -83,18 +69,16 @@ const BuildingEditContent: React.FC = () => {
     setShowErrorMessage(false);
 
     try {
-      // Prepare data for API call
       const apiData = {
         lat: position[0],
         long: position[1],
-        info: formData.addressInfo.join(', '), // Combine all address info
+        info: formData.addressInfo.join(', '),
         numberOfDoors: formData.numberOfDoors,
         language: formData.language,
         address: formData.buildingAddress 
       };
 
-      // Call your API route to update the building - Using relative URL
-      const response = await fetch(`/api/door/${buildingId}`, {
+      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -108,11 +92,8 @@ const BuildingEditContent: React.FC = () => {
 
       const result = await response.json();
       console.log('Building updated:', result);
-
-      // Show success message
       setShowSuccessMessage(true);
 
-      // After 2 seconds, redirect back
       setTimeout(() => {
         router.back();
       }, 2000);
@@ -120,8 +101,6 @@ const BuildingEditContent: React.FC = () => {
     } catch (error) {
       console.error('Error updating building:', error);
       setShowErrorMessage(true);
-      
-      // Hide error message after 3 seconds
       setTimeout(() => {
         setShowErrorMessage(false);
       }, 3000);
@@ -134,18 +113,16 @@ const BuildingEditContent: React.FC = () => {
     if (!buildingId || !originalData) return;
 
     setIsDeleting(true);
-    
+
     try {
-      // First, save to deleted_buildings table
       const deletedData = {
-        ...originalData,
+        ...(originalData ?? {}),
         deleted_at: new Date().toISOString(),
-        deleted_by: 'user', // You can replace this with actual user info
+        deleted_by: 'user',
         original_id: buildingId
       };
 
-      // Save to deleted buildings table - Using relative URL
-      const saveDeletedResponse = await fetch(`/api/deleted-buildings`, {
+      const saveDeletedResponse = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/deleted-buildings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,8 +134,7 @@ const BuildingEditContent: React.FC = () => {
         throw new Error('Failed to save deleted building data');
       }
 
-      // Now delete from main table - Using relative URL
-      const deleteResponse = await fetch(`/api/door/${buildingId}`, {
+      const deleteResponse = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`, {
         method: 'DELETE',
       });
 
@@ -166,10 +142,9 @@ const BuildingEditContent: React.FC = () => {
         throw new Error('Failed to delete building');
       }
 
-      // Show success and redirect
       setShowSuccessMessage(true);
       setTimeout(() => {
-        router.push('/'); // Redirect to home or buildings list
+        router.push('/');
       }, 2000);
 
     } catch (error) {
@@ -184,7 +159,6 @@ const BuildingEditContent: React.FC = () => {
     }
   };
 
-  // Function to handle map movement and update GPS coordinates
   const handleMapMoveEnd = (lat: number, lng: number) => {
     const newPosition: [number, number] = [lat, lng];
     setPosition(newPosition);
@@ -277,7 +251,6 @@ const BuildingEditContent: React.FC = () => {
         />
       </div>
 
-      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-[9999]">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm mx-4">
@@ -305,7 +278,6 @@ const BuildingEditContent: React.FC = () => {
         </div>
       )}
 
-      {/* Success Message */}
       {showSuccessMessage && (
         <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-70 z-[9999]">
           <div className="bg-white p-4 rounded-md shadow-xl border border-green-200">
@@ -316,7 +288,6 @@ const BuildingEditContent: React.FC = () => {
         </div>
       )}
 
-      {/* Error Message */}
       {showErrorMessage && (
         <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-70 z-[9999]">
           <div className="bg-white p-4 rounded-md shadow-xl border border-red-200">
@@ -328,14 +299,12 @@ const BuildingEditContent: React.FC = () => {
   );
 };
 
-// Loading component for suspense fallback
 const LoadingSpinner: React.FC = () => (
   <div className="h-screen w-full flex items-center justify-center">
     <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-700"></div>
   </div>
 );
 
-// Main component with Suspense boundary
 const BuildingEditPage: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
