@@ -1,14 +1,18 @@
+// app/api/door/[id]/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+
+export const dynamic = 'force-dynamic'; // ✅ THIS FIXES THE TYPE ERROR
 
 const prisma = new PrismaClient();
 
 export async function GET(
   req: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const id = parseInt(context.params.id);
+    const id = parseInt(params.id);
     if (isNaN(id)) {
       return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
     }
