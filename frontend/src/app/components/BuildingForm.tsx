@@ -20,7 +20,7 @@ interface BuildingFormProps {
   onSave: () => void;
   onCancel: () => void;
   isLoading: boolean;
-  onMapMoveEnd?: (lat: number, lng: number) => void; // Add this prop
+  onMapMoveEnd?: (lat: number, lng: number) => void;
 }
 
 const BuildingForm: React.FC<BuildingFormProps> = ({
@@ -31,12 +31,13 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   onSave,
   onCancel,
   isLoading,
-  onMapMoveEnd, // Add this prop
+  onMapMoveEnd,
 }) => {
   const [mapCenter, setMapCenter] = useState<[number, number]>(position);
   const [pinPosition, setPinPosition] = useState<[number, number]>(position);
   const [locationStatus, setLocationStatus] = useState<'loading' | 'success' | 'error' | 'denied'>('loading');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [mapZoom, setMapZoom] = useState(17);
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -97,8 +98,14 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   };
 
   const handleMapMove = (lat: number, lng: number) => {
-    setMapCenter([lat, lng]);
+    const newCenter: [number, number] = [lat, lng];
+    setMapCenter(newCenter);
+    
     // Update GPS coordinates based on crosshair position (map center)
+    const gpsString = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    onGpsChange(gpsString);
+    // Don't move the pin - keep it at its current position
+    
     if (onMapMoveEnd) {
       onMapMoveEnd(lat, lng);
     }
@@ -133,6 +140,19 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
     }
   };
 
+  // Handle manual GPS input
+  const handleGpsInputChange = (value: string) => {
+    onGpsChange(value);
+    
+    // Try to parse and update map if valid coordinates
+    const coords = value.split(',').map(coord => parseFloat(coord.trim()));
+    if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+      const newPosition: [number, number] = [coords[0], coords[1]];
+      setMapCenter(newPosition);
+      setPinPosition(newPosition);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* GPS Field */}
@@ -142,14 +162,14 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           <input
             type="text"
             value={formData.gps}
-            onChange={(e) => onGpsChange(e.target.value)}
+            onChange={(e) => handleGpsInputChange(e.target.value)}
             className="w-full p-2 border rounded-md"
             placeholder="Latitude, Longitude"
           />
           <button
             onClick={getCurrentLocation}
             disabled={isGettingLocation}
-            className="ml-2 p-2 bg-purple-700 text-white rounded-md hover:bg-purple-600 disabled:bg-gray-400"
+            className="ml-2 p-2 bg-purple-700 text-white rounded-md hover:bg-purple-600 disabled:bg-gray-400 flex-shrink-0"
             title="Get current location"
           >
             {isGettingLocation ? (
@@ -190,26 +210,53 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
 
       {/* Map with Crosshair and pin */}
       <div className="relative h-64 border rounded-md overflow-hidden shadow-sm">
-        <Map
-          center={mapCenter}
-          zoom={17}
-          draggable={true}
-          showDraggablePin={true}
-          showViewToggle={true}
-          markerPosition={pinPosition}
-          onPositionChange={handlePinMove}
-          onMapDoubleClick={handlePinMove}
-          onMapMoveEnd={handleMapMove}
-          instructionText="Move map or double-click to update location"
-          height="100%"
-        />
-        <img
-          src="/focus.svg"
-          alt="crosshair"
-          className="pointer-events-none w-40 h-40 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999]"
-        />
-        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-          Move map to update GPS coordinates
+        <div className="w-full h-full relative">
+          <Map
+            center={mapCenter}
+            zoom={mapZoom}
+            draggable={true}
+            showMarker={true}
+            showViewToggle={true}
+            markerPosition={pinPosition}
+            onPositionChange={handlePinMove}
+            onMapDoubleClick={handlePinMove}
+            onMapMoveEnd={handleMapMove}
+            instructionText="Move map or double-click to update location"
+            height="100%"
+          />
+          
+          {/* Crosshair overlay - positioned to not interfere with map interactions */}
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-[1000]">
+            <img
+              src="/focus.svg"
+              alt="crosshair"
+              className="w-50 h-50"
+              style={{ filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.5))' }}
+            />
+          </div>
+          
+          {/* Instruction overlay */}
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded pointer-events-none z-[1001]">
+            Use mouse wheel to zoom • Move map to update GPS
+          </div>
+          
+          {/* Zoom controls overlay for better accessibility */}
+          <div className="absolute top-2 right-2 flex flex-col bg-white rounded shadow-md overflow-hidden z-[1001]">
+            <button
+              onClick={() => setMapZoom(prev => Math.min(20, prev + 1))}
+              className="px-2 py-1 text-lg font-bold hover:bg-gray-100 border-b"
+              title="Zoom in"
+            >
+              +
+            </button>
+            <button
+              onClick={() => setMapZoom(prev => Math.max(1, prev - 1))}
+              className="px-2 py-1 text-lg font-bold hover:bg-gray-100"
+              title="Zoom out"
+            >
+              −
+            </button>
+          </div>
         </div>
       </div>
 
@@ -262,19 +309,19 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
             type="text"
             value={formData.numberOfDoors}
             readOnly
-            className="flex-1 p-2 border rounded-md"
+            className="flex-1 p-2 border rounded-md bg-gray-50"
           />
           <button
             onClick={() =>
               onFormChange('numberOfDoors', Math.max(0, formData.numberOfDoors - 1))
             }
-            className="mx-2 px-2 py-1 border rounded-md hover:bg-gray-50"
+            className="mx-2 px-3 py-2 border rounded-md hover:bg-gray-50 font-bold"
           >
             −
           </button>
           <button
             onClick={() => onFormChange('numberOfDoors', formData.numberOfDoors + 1)}
-            className="px-2 py-1 border rounded-md hover:bg-gray-50"
+            className="px-3 py-2 border rounded-md hover:bg-gray-50 font-bold"
           >
             +
           </button>
@@ -291,23 +338,23 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
             value={address}
             onChange={(e) => onFormChange('addressInfo', e.target.value, index)}
             className="w-full p-2 mb-2 border rounded-md"
-            placeholder={`e.g. Address for door ${index + 1}`}
+            placeholder={`Address for door ${index + 1}`}
           />
         ))}
       </div>
 
       {/* Action Buttons */}
-      <div className="flex justify-end mt-6">
+      <div className="flex justify-end mt-6 space-x-2">
         <button
           onClick={onCancel}
-          className="px-4 py-2 mr-2 bg-gray-200 rounded-md hover:bg-gray-300"
+          className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 disabled:opacity-50"
           disabled={isLoading}
         >
           Cancel
         </button>
         <button
           onClick={onSave}
-          className="px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200"
+          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
           disabled={isLoading}
         >
           {isLoading ? 'Saving...' : 'Save'}
