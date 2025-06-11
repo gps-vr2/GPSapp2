@@ -10,6 +10,7 @@ interface RequestData {
   numberOfDoors?: number;
   info?: string;
   address?: string; 
+  territory_id?: number;
 }
 
 interface DoorData {
@@ -18,43 +19,6 @@ interface DoorData {
   building_id: number;
   id_cong_app: number;
   id_cong_lang: number;
-}
-
-
-interface BuildingWithDoors {
-  idBuilding: number;
-  lat: number;
-  long: number;
-  address: string | null; 
-  territory_id: number;
-  Door: Array<{
-    language: string;
-    information_name: string | null;
-    building_id: number;
-    id_cong_app: number;
-    id_cong_lang: number;
-  }>;
-}
-
-// Add type for the response building data
-interface BuildingResponse {
-  id: number;
-  lat: number;
-  long: number;
-  address: string | null;
-  doorCount: number;
-  language: string;
-}
-interface Building24hView {
-  lat: number;
-  long: number;
-  last_modified: Date;
-}
-
-// Type for coordinates
-interface Coordinates {
-  lat: number;
-  long: number;
 }
 
 // Handle OPTIONS preflight requests (for CORS)
@@ -69,65 +33,26 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-// Handle GET requests - fetch ALL buildings (not just latest)
-// Type definition for the 24-hour view data
-
-
+// Handle GET requests - fetch all buildings
 export async function GET(): Promise<NextResponse> {
   try {
-    
-    const buildings24h = await prisma.$queryRaw<Building24hView[]>`
-      SELECT lat,  \`long\`, last_modified 
-      FROM Building_v_24h 
-      ORDER BY last_modified DESC
-    `;
-
-    if (!buildings24h || buildings24h.length === 0) {
-      return new NextResponse(JSON.stringify({ message: 'No buildings found within 24 hours' }), {
-        status: 404,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json",
-        },
-      });
-    }
-
-    // Extract coordinates from the view results
-    const coordinates: Coordinates[] = buildings24h.map((b: Building24hView) => ({ lat: b.lat, long: b.long }));
-
-    // Get full building data with doors for buildings that match the 24h view coordinates
     const buildings = await prisma.building.findMany({
-      where: {
-        OR: coordinates.map((coord: Coordinates) => ({
-          AND: [
-            { lat: coord.lat },
-            { long: coord.long }
-          ]
-        }))
-      },
-      orderBy: {
-        last_modified: 'desc',
-      },
       include: {
         Door: true,
       },
-    }) as BuildingWithDoors[];
+    });
 
-    // Map all buildings to the expected format
-    const buildingsData: BuildingResponse[] = buildings.map((building: BuildingWithDoors) => ({
+    const buildingsData = buildings.map(building => ({
       id: building.idBuilding,
       lat: building.lat,
       long: building.long,
       address: building.address,
-      doorCount: building.Door.length,
-      language: building.Door[0]?.language ?? 'Unknown',
+      numberOfDoors: building.Door.length,
+      language: building.Door[0]?.language || 'English',
+      info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
     }));
 
-    return new NextResponse(JSON.stringify({
-      buildings: buildingsData,
-      count: buildingsData.length,
-      message: 'Buildings from last 24 hours retrieved successfully'
-    }), {
+    return new NextResponse(JSON.stringify(buildingsData), {
       status: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
@@ -147,10 +72,11 @@ export async function GET(): Promise<NextResponse> {
     await prisma.$disconnect();
   }
 }
-// Handle POST requests - create building and doors
-export async function POST(req: NextRequest): Promise<NextResponse> {
+
+// Handle POST requests - create new building
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const bodyText = await req.text();
+    const bodyText = await request.text();
 
     if (!bodyText) {
       return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
@@ -163,9 +89,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const data: RequestData = JSON.parse(bodyText) as RequestData;
-    console.log("Received data:", data);
+    console.log("Received create data:", data);
 
-    const { lat, long, language, numberOfDoors, info, address } = data;
+    const { lat, long, language, numberOfDoors, info, address, territory_id } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
       return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
@@ -177,27 +103,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    const building = await prisma.building.create({
+    // Create the building
+    const newBuilding = await prisma.building.create({
       data: {
         lat,
         long,
-        territory_id: 1,
-        address: address
+        address: address || null,
+        territory_id: territory_id || 1, // Default territory_id if not provided
+        last_modified: new Date(),
       },
     });
 
-    const doors: DoorData[] = Array.from({ length: numberOfDoors || 1 }).map(() => ({
-      language: language ?? 'Unknown',
-      information_name: info,
-      building_id: building.idBuilding,
+    // Create doors for the building
+    const doorInfoArray = info ? info.split(', ') : [''];
+    const doorsToCreate = Math.max(numberOfDoors || 1, doorInfoArray.length);
+    
+    const doors: DoorData[] = Array.from({ length: doorsToCreate }).map((_, index) => ({
+      language: language ?? 'English',
+      information_name: doorInfoArray[index] || undefined,
+      building_id: newBuilding.idBuilding,
       id_cong_app: 1,
       id_cong_lang: 1,
     }));
 
     await prisma.door.createMany({ data: doors });
 
-    return new NextResponse(JSON.stringify({ message: 'Saved successfully' }), {
-      status: 200,
+    return new NextResponse(JSON.stringify({ 
+      message: 'Building created successfully',
+      building: newBuilding 
+    }), {
+      status: 201,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
