@@ -270,11 +270,11 @@ export default function HomePage() {
           
           {/* Center - Title */}
           <div className="flex-1 flex justify-center">
-            <div className="text-xl font-bold text-white text-shadow">WELCOME TO GPS-V2R</div>
+            <div className="text-x0 font-bold text-white text-shadow">WELCOME TO GPS-V2R</div>
           </div>
           
           {/* Right side - Empty space for balance */}
-          <div className="w-[100px]"></div>
+          <div className="w-[60px]"></div>
         </div>
       </div>
 
