@@ -3,13 +3,23 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 
+interface Pin {
+  id: number;
+  position: [number, number];
+  title: string;
+  doors?: string[];
+  numberOfDoors?: number;
+  language?: string;
+  info?: string;
+}
+
 interface LeafletHTMLElement extends HTMLElement {
   _leaflet_id?: number;
 }
 
 interface MapProps {
   center: [number, number];
-  pins?: { id: number; position: [number, number]; title: string }[];
+  pins?: Pin[];
   zoom: number;
   draggable?: boolean;
   showMarker?: boolean;
@@ -23,6 +33,11 @@ interface MapProps {
   onMapMoveEnd?: (lat: number, lng: number) => void;
   showViewToggle?: boolean;
   userLocation?: [number, number] | null;
+  
+  onPinClick?: (pin: Pin) => void;
+  selectedPin?: Pin | null;
+  isEditing?: boolean;
+  onPositionUpdate?: (lat: number, long: number) => void;
 }
 
 const Map: React.FC<MapProps> = ({
@@ -39,6 +54,12 @@ const Map: React.FC<MapProps> = ({
   onMapMoveEnd,
   showViewToggle = false,
   userLocation,
+  
+
+  // Remove unused props to avoid eslint errors
+  // selectedPin,
+  // isEditing,
+  // onPositionUpdate,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -57,13 +78,20 @@ const Map: React.FC<MapProps> = ({
     onMapDoubleClick?.(position);
   }, [onMapDoubleClick]);
 
+
+  const handleMapMoveEnd = useCallback(() => {
+    if (mapInstanceRef.current && onMapMoveEnd) {
+      const center = mapInstanceRef.current.getCenter();
+      onMapMoveEnd(center.lat, center.lng);
+    }
+  }, [onMapMoveEnd]);
+
   useEffect(() => {
     if (!mapRef.current) return;
 
     if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
       delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
     }
-
     const initializeMap = async () => {
       const L = await import('leaflet');
       const map = L.map(mapRef.current!, {
@@ -95,10 +123,7 @@ const Map: React.FC<MapProps> = ({
       tileLayerRef.current = getTileLayer(currentMapView);
       tileLayerRef.current.addTo(map);
 
-      map.on('moveend', () => {
-        const center = map.getCenter();
-        onMapMoveEnd?.(center.lat, center.lng);
-      });
+      map.on('moveend', handleMapMoveEnd);
 
       map.on('dblclick', (e) => {
         const pos: [number, number] = [e.latlng.lat, e.latlng.lng];
@@ -126,7 +151,7 @@ const Map: React.FC<MapProps> = ({
         isInitializedRef.current = false;
       }
     };
-  }, []);
+  }, [center, currentMapView, handleMapDoubleClick, handlePositionChange, handleMapMoveEnd, zoom]);
 
   useEffect(() => {
     if (mapInstanceRef.current && isInitializedRef.current) {
@@ -178,7 +203,7 @@ const Map: React.FC<MapProps> = ({
 
       if (userLocation) {
         const userIcon = L.icon({
-          iconUrl: '/xy.png',
+          iconUrl: '/pin0.png',
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -24],
@@ -211,7 +236,7 @@ const Map: React.FC<MapProps> = ({
         const pos = markerPosition || center;
 
         const icon = L.icon({
-          iconUrl: '/xy.png',
+          iconUrl: '/pin0.png',
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -48],
@@ -245,7 +270,7 @@ const Map: React.FC<MapProps> = ({
         const pinMarker = L.marker(pin.position, {
           title: pin.title,
           icon: L.icon({
-            iconUrl: '/pin 48px.png',
+            iconUrl: '/pin1.png',
             iconSize: [48, 48],
             iconAnchor: [24, 48],
             popupAnchor: [0, -48],

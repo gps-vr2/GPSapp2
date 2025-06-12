@@ -8,10 +8,31 @@ interface BuildingData {
   id: string;
   lat: number;
   long: number;
+  // Add all possible coordinate field variations
+  latitude?: number;
+  longitude?: number;
+  lng?: number;
+  Lat?: number;
+  Long?: number;
+  Latitude?: number;
+  Longitude?: number;
+  Lng?: number;
+  // Add nested coordinates object
+  coordinates?: {
+    lat?: number;
+    long?: number;
+    latitude?: number;
+    longitude?: number;
+    lng?: number;
+  };
+  // Other properties
   language?: string;
   numberOfDoors?: number;
   info?: string;
   address?: string;
+  // Add other possible fields that might come from API
+  _id?: string;
+  buildingId?: string;
 }
 
 const BuildingEditContent: React.FC = () => {
@@ -27,7 +48,7 @@ const BuildingEditContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isDataLoaded, setIsDataLoaded] = useState(false); // Add this state
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const [formData, setFormData] = useState({
     gps: '',
@@ -75,7 +96,7 @@ const BuildingEditContent: React.FC = () => {
             // Handle different API response formats
             if (responseData.buildings && Array.isArray(responseData.buildings)) {
               // Find the specific building by ID
-              data = responseData.buildings.find((building: any) => 
+              data = responseData.buildings.find((building:BuildingData) => 
                 String(building.id) === String(buildingId) || 
                 String(building._id) === String(buildingId) ||
                 String(building.buildingId) === String(buildingId)
@@ -83,7 +104,7 @@ const BuildingEditContent: React.FC = () => {
               
               if (!data && responseData.buildings.length > 0) {
                 console.warn(`Building with ID ${buildingId} not found. Available buildings:`, 
-                  responseData.buildings.map((b: any) => ({ id: b.id, _id: b._id, buildingId: b.buildingId }))
+                  responseData.buildings.map((b: BuildingData) => ({ id: b.id, _id: b._id, buildingId: b.buildingId }))
                 );
                 // Don't use fallback, let user know the specific building wasn't found
               }
@@ -110,9 +131,9 @@ const BuildingEditContent: React.FC = () => {
       // Debug log the entire response and extracted building
       console.log('Extracted building data:', data);
 
-      // Handle different possible coordinate field names
-      let lat = data.lat || data.latitude || data.Lat || data.Latitude;
-      let long = data.long || data.lng || data.longitude || data.Long || data.Lng || data.Longitude;
+      // Handle different possible coordinate field names with proper type checking
+      let lat: number | undefined = data.lat || data.latitude || data.Lat || data.Latitude;
+      let long: number | undefined = data.long || data.lng || data.longitude || data.Long || data.Lng || data.Longitude;
       
       // Comprehensive coordinate validation
       console.log('Extracted coordinates:', { lat, long, type_lat: typeof lat, type_long: typeof long });
@@ -121,7 +142,7 @@ const BuildingEditContent: React.FC = () => {
       if (lat === null || lat === undefined || long === null || long === undefined) {
         // Try to find coordinates in nested objects
         if (data.coordinates) {
-          lat = data.coordinates.lat || data.coordinates.latitude;
+          lat = data.coordinates.lat || data.coordinates.latitude || data.coordinates.lng;
           long = data.coordinates.long || data.coordinates.lng || data.coordinates.longitude;
         }
         
@@ -134,26 +155,33 @@ const BuildingEditContent: React.FC = () => {
       }
       
       // Convert to numbers and validate
-      lat = Number(lat);
-      long = Number(long);
+      const numLat = Number(lat);
+      const numLong = Number(long);
       
-      if (isNaN(lat) || isNaN(long)) {
+      if (isNaN(numLat) || isNaN(numLong)) {
         throw new Error(`Invalid coordinate format from API: lat="${lat}" (${typeof lat}), long="${long}" (${typeof long})`);
       }
       
       // Validate coordinate ranges
-      if (lat < -90 || lat > 90) {
-        throw new Error(`Latitude out of valid range (-90 to 90): ${lat}`);
+      if (numLat < -90 || numLat > 90) {
+        throw new Error(`Latitude out of valid range (-90 to 90): ${numLat}`);
       }
       
-      if (long < -180 || long > 180) {
-        throw new Error(`Longitude out of valid range (-180 to 180): ${long}`);
+      if (numLong < -180 || numLong > 180) {
+        throw new Error(`Longitude out of valid range (-180 to 180): ${numLong}`);
       }
 
-      setOriginalData({ ...data, lat, long });
+      // Create a properly typed building data object
+      const buildingData: BuildingData = {
+        ...data,
+        lat: numLat,
+        long: numLong
+      };
+
+      setOriginalData(buildingData);
       
       const formDataFromAPI = {
-        gps: `${lat}, ${long}`,
+        gps: `${numLat}, ${numLong}`,
         language: data.language || 'English',
         numberOfDoors: data.numberOfDoors || 1,
         addressInfo: data.info ? data.info.split(', ').filter(info => info.trim()) : [''],
@@ -172,8 +200,8 @@ const BuildingEditContent: React.FC = () => {
       
       setFormData(formDataFromAPI);
       setOriginalFormData(formDataFromAPI);
-      setPosition([lat, long]);
-      setIsDataLoaded(true); // Set data loaded flag
+      setPosition([numLat, numLong]);
+      setIsDataLoaded(true);
       
     } catch (error) {
       console.error('Error loading building data:', error);
@@ -192,7 +220,7 @@ const BuildingEditContent: React.FC = () => {
 
   // Check for unsaved changes
   useEffect(() => {
-    if (isDataLoaded) { // Only check for changes after data is loaded
+    if (isDataLoaded) {
       const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalFormData);
       setHasUnsavedChanges(hasChanges);
     }
@@ -208,14 +236,14 @@ const BuildingEditContent: React.FC = () => {
     }
   };
 
-  const handleSave = async () => {
-    if (!position || !buildingId) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!position || !buildingId) return false;
 
     // Validate form data
     if (!formData.buildingAddress.trim()) {
       setErrorMessage('Please enter a building address');
       setShowErrorMessage(true);
-      return;
+      return false;
     }
 
     // Filter out empty door info and validate
@@ -223,13 +251,13 @@ const BuildingEditContent: React.FC = () => {
     if (validDoorInfo.length === 0) {
       setErrorMessage('Please fill in at least one door information field');
       setShowErrorMessage(true);
-      return;
+      return false;
     }
 
     if (validDoorInfo.length !== formData.numberOfDoors) {
       setErrorMessage(`Number of doors (${formData.numberOfDoors}) must match the number of door information fields provided (${validDoorInfo.length})`);
       setShowErrorMessage(true);
-      return;
+      return false;
     }
 
     setIsLoading(true);
@@ -293,6 +321,8 @@ const BuildingEditContent: React.FC = () => {
         router.back();
       }, 2000);
 
+      return true;
+
     } catch (error) {
       console.error('Error updating building:', error);
       setErrorMessage(`Failed to update building: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -301,6 +331,8 @@ const BuildingEditContent: React.FC = () => {
       setTimeout(() => {
         setShowErrorMessage(false);
       }, 5000);
+      
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -422,7 +454,7 @@ const BuildingEditContent: React.FC = () => {
   const handleReset = () => {
     if (confirm('Are you sure you want to reset all changes?')) {
       setFormData(originalFormData);
-      if (originalData) {
+      if (originalData && typeof originalData.lat === 'number' && typeof originalData.long === 'number') {
         setPosition([originalData.lat, originalData.long]);
       }
     }

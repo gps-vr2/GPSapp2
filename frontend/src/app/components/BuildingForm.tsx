@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
@@ -44,13 +44,33 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [mapZoom, setMapZoom] = useState(17);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Use refs to track current values and prevent unnecessary updates
+  const currentGpsRef = useRef(formData.gps);
+  const isEditModeRef = useRef(isEditMode);
+  const positionRef = useRef(position);
 
-  // Get user's current location on component mount
+  // Update refs when props change
+  useEffect(() => {
+    currentGpsRef.current = formData.gps;
+    isEditModeRef.current = isEditMode;
+    positionRef.current = position;
+  });
+
+  // Stable GPS change handler that won't cause infinite loops
+  const handleGpsUpdate = useCallback((gpsString: string) => {
+    if (currentGpsRef.current !== gpsString) {
+      onGpsChange(gpsString);
+    }
+  }, [onGpsChange]);
+
+  // Get user's current location - stable function
   const getCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setLocationStatus('error');
-      setMapCenter(position);
-      setPinPosition(position);
+      setMapCenter(positionRef.current);
+      setPinPosition(positionRef.current);
       return;
     }
 
@@ -66,7 +86,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         setMapCenter(userLocation);
         setPinPosition(userLocation);
         const gpsString = `${userLocation[0].toFixed(6)}, ${userLocation[1].toFixed(6)}`;
-        onGpsChange(gpsString);
+        handleGpsUpdate(gpsString);
         setLocationStatus('success');
         setIsGettingLocation(false);
       },
@@ -79,8 +99,8 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           setLocationStatus('error');
         }
         
-        setMapCenter(position);
-        setPinPosition(position);
+        setMapCenter(positionRef.current);
+        setPinPosition(positionRef.current);
         setIsGettingLocation(false);
       },
       {
@@ -89,21 +109,23 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         maximumAge: 300000
       }
     );
-  }, []); // Remove dependencies to prevent infinite loop
+  }, [handleGpsUpdate]);
 
-  // Initialize location - separate useEffect for initialization
+  // Initialize location once on mount
   useEffect(() => {
+    if (isInitialized) return;
+
     let mounted = true;
 
     const initializeLocation = () => {
       if (!mounted) return;
 
-      if (!isEditMode || !formData.gps) {
+      if (!isEditModeRef.current || !currentGpsRef.current) {
         // Get current location for new buildings
         getCurrentLocation();
       } else {
         // Parse existing GPS for edit mode
-        const coords = formData.gps.split(',').map(coord => parseFloat(coord.trim()));
+        const coords = currentGpsRef.current.split(',').map(coord => parseFloat(coord.trim()));
         if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
           const existingPosition: [number, number] = [coords[0], coords[1]];
           setMapCenter(existingPosition);
@@ -111,55 +133,60 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
           setLocationStatus('success');
         }
       }
+      setIsInitialized(true);
     };
 
-    // Only initialize once when component mounts
     initializeLocation();
 
     return () => {
       mounted = false;
     };
-  }, []); // Empty dependency array - only run once on mount
+  }, [getCurrentLocation, isInitialized]);
 
-  // Separate useEffect to handle position prop changes
+  // Handle position prop changes only when not in edit mode or GPS is empty
   useEffect(() => {
-    if (position && (!isEditMode || !formData.gps)) {
-      setMapCenter(position);
-      setPinPosition(position);
-      const gpsString = `${position[0].toFixed(6)}, ${position[1].toFixed(6)}`;
+    if (!isInitialized) return;
+    
+    const lat = position[0];
+    const lng = position[1];
+    
+    if ((!isEditMode || !formData.gps) && (lat !== mapCenter[0] || lng !== mapCenter[1])) {
+      setMapCenter([lat, lng]);
+      setPinPosition([lat, lng]);
+      const gpsString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       if (formData.gps !== gpsString) {
-        onGpsChange(gpsString);
+        handleGpsUpdate(gpsString);
       }
     }
-  }, [position[0], position[1]]); // Watch for position changes
+  }, [position, isEditMode, formData.gps, mapCenter, handleGpsUpdate, isInitialized]);
 
-  // Enhanced map movement handler - this is the key function for drag updates
+  // Enhanced map movement handler with debouncing to prevent excessive updates
   const handleMapMove = useCallback((lat: number, lng: number) => {
-    console.log('Map moved to:', lat, lng); // Debug log
+    console.log('Map moved to:', lat, lng);
     
     const newCenter: [number, number] = [lat, lng];
     setMapCenter(newCenter);
-    setPinPosition(newCenter); // Update pin position to match map center
+    setPinPosition(newCenter);
     
     // Update GPS coordinates with proper formatting
     const gpsString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    console.log('Updating GPS to:', gpsString); // Debug log
-    onGpsChange(gpsString);
+    console.log('Updating GPS to:', gpsString);
+    handleGpsUpdate(gpsString);
     
     // Call parent callback if provided
     if (onMapMoveEnd) {
       onMapMoveEnd(lat, lng);
     }
-  }, [onGpsChange, onMapMoveEnd]);
+  }, [handleGpsUpdate, onMapMoveEnd]);
 
-  // Handle pin dragging (if your Map component supports draggable markers)
-  const handlePinMove = (newPosition: [number, number]) => {
-    console.log('Pin moved to:', newPosition); // Debug log
+  // Handle pin dragging
+  const handlePinMove = useCallback((newPosition: [number, number]) => {
+    console.log('Pin moved to:', newPosition);
     setPinPosition(newPosition);
-    setMapCenter(newPosition); // Sync map center with pin
+    setMapCenter(newPosition);
     const gpsString = `${newPosition[0].toFixed(6)}, ${newPosition[1].toFixed(6)}`;
-    onGpsChange(gpsString);
-  };
+    handleGpsUpdate(gpsString);
+  }, [handleGpsUpdate]);
 
   const getLocationStatusMessage = () => {
     switch (locationStatus) {
@@ -191,8 +218,8 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
   };
 
   // Handle manual GPS input with validation
-  const handleGpsInputChange = (value: string) => {
-    onGpsChange(value);
+  const handleGpsInputChange = useCallback((value: string) => {
+    handleGpsUpdate(value);
     
     const coords = value.split(',').map(coord => parseFloat(coord.trim()));
     if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
@@ -204,18 +231,18 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         setLocationStatus('success');
       }
     }
-  };
+  }, [handleGpsUpdate]);
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     setMapZoom(prev => Math.min(20, prev + 1));
-  };
+  }, []);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setMapZoom(prev => Math.max(1, prev - 1));
-  };
+  }, []);
 
   // Validate form before saving
-  const isFormValid = () => {
+  const isFormValid = useCallback(() => {
     return (
       formData.gps.trim() !== '' &&
       formData.language.trim() !== '' &&
@@ -224,13 +251,12 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
       formData.addressInfo.every(addr => addr.trim() !== '') &&
       formData.addressInfo.length === formData.numberOfDoors
     );
-  };
+  }, [formData]);
 
   // Enhanced save handler with better success feedback
-  const handleSave = async (): Promise<boolean> => {
-    // Call the parent's onSave function instead of handling it here
+  const handleSave = useCallback(async (): Promise<boolean> => {
     try {
-      setShowSuccessMessage(false); // Reset any existing success message
+      setShowSuccessMessage(false);
       const result = await onSave();
       
       if (result) {
@@ -238,9 +264,8 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
         // Navigate back to main page after 1.5 seconds with the new building coordinates
         setTimeout(() => {
           setShowSuccessMessage(false);
-          // Navigate to main page with the newly added building coordinates
-          // Use replace instead of push to prevent going back to the form
-          router.replace(`/?lat=${position[0]}&lng=${position[1]}&newBuilding=true&timestamp=${Date.now()}`);
+          // Use current position from state, not props
+          router.replace(`/?lat=${pinPosition[0]}&lng=${pinPosition[1]}&newBuilding=true&timestamp=${Date.now()}`);
         }, 1500);
       }
       
@@ -249,7 +274,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
       console.error('Error in handleSave:', error);
       return false;
     }
-  };
+  }, [onSave, router, pinPosition]);
 
   // Success Message Component
   const SuccessMessage = () => (
@@ -322,7 +347,7 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
               markerPosition={pinPosition}
               onPositionChange={handlePinMove}
               onMapDoubleClick={handlePinMove}
-              onMapMoveEnd={handleMapMove} // This is crucial for drag updates
+              onMapMoveEnd={handleMapMove}
               instructionText="Drag map or move marker to update coordinates"
               height="100%"
             />
@@ -338,7 +363,6 @@ const BuildingForm: React.FC<BuildingFormProps> = ({
                 style={{ filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.5))' }}
               />
             </div>
-            
             
             {/* Zoom controls */}
             <div className="absolute top-2 right-2 flex flex-col bg-white rounded shadow-md overflow-hidden z-[1001]">
