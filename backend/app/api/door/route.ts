@@ -9,7 +9,7 @@ interface RequestData {
   language?: string;
   numberOfDoors?: number;
   info?: string;
-  address?: string;
+  address?: string; 
   territory_id?: number;
 }
 
@@ -20,14 +20,6 @@ interface DoorData {
   id_cong_app: number;
   id_cong_lang: number;
 }
-type BuildingResult = {
-  id: number;
-  lat: number;
-  long: number;
-  congregation_name: string;
-  pinColor: string;
-  language: string;
-};
 
 // Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS(): Promise<NextResponse> {
@@ -41,40 +33,33 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-// ✅ Handle GET requests - fetch buildings from last 24h with color
+// Handle GET requests - fetch all buildings
 export async function GET(): Promise<NextResponse> {
   try {
-    const buildings = await prisma.$queryRaw`
-      SELECT 
-        b.idBuilding AS id,
-        b.lat,
-        b.long,
-        c.name AS congregation_name,
-        c.pinColor,
-        l.name AS language
-      FROM Building b
-      JOIN Door d ON d.building_id = b.idBuilding
-      JOIN Congregation c ON d.id_cong_app = c.idCongregation
-      JOIN Language l ON d.id_cong_lang = l.id_cong_app
-      WHERE b.last_modified >= NOW() - INTERVAL 1 DAY
-    `;
+    const buildings = await prisma.building.findMany({
+      include: {
+        Door: true,
+      },
+    });
 
-    const pins = (buildings as BuildingResult[]).map((b) => ({
-      id: b.id,
-      position: [b.lat, b.long],
-      title: b.congregation_name,
-      pinColor: b.pinColor,
-      language: b.language,
+    const buildingsData = buildings.map(building => ({
+      id: building.idBuilding,
+      lat: building.lat,
+      long: building.long,
+      address: building.address,
+      numberOfDoors: building.Door.length,
+      language: building.Door[0]?.language || 'English',
+      info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
     }));
 
-    return new NextResponse(JSON.stringify(pins), {
+    return new NextResponse(JSON.stringify(buildingsData), {
       status: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('GET Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
@@ -88,7 +73,7 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
-// ✅ Handle POST requests - create new building
+// Handle POST requests - create new building
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const bodyText = await request.text();
@@ -124,7 +109,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         lat,
         long,
         address: address || null,
-        territory_id: territory_id || 1,
+        territory_id: territory_id || 1, // Default territory_id if not provided
         last_modified: new Date(),
       },
     });
@@ -132,20 +117,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Create doors for the building
     const doorInfoArray = info ? info.split(', ') : [''];
     const doorsToCreate = Math.max(numberOfDoors || 1, doorInfoArray.length);
-
+    
     const doors: DoorData[] = Array.from({ length: doorsToCreate }).map((_, index) => ({
       language: language ?? 'English',
       information_name: doorInfoArray[index] || undefined,
       building_id: newBuilding.idBuilding,
-      id_cong_app: 1, // 🔁 Replace this with dynamic value if needed
+      id_cong_app: 1,
       id_cong_lang: 1,
     }));
 
     await prisma.door.createMany({ data: doors });
 
-    return new NextResponse(JSON.stringify({
+    return new NextResponse(JSON.stringify({ 
       message: 'Building created successfully',
-      building: newBuilding
+      building: newBuilding 
     }), {
       status: 201,
       headers: {
@@ -153,7 +138,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         "Content-Type": "application/json",
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('POST Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
