@@ -11,7 +11,9 @@ interface Pin {
   numberOfDoors?: number;
   language?: string;
   info?: string;
+  pinColor?: string; // ✅ add this
 }
+
 
 interface LeafletHTMLElement extends HTMLElement {
   _leaflet_id?: number;
@@ -203,7 +205,7 @@ const Map: React.FC<MapProps> = ({
 
       if (userLocation) {
         const userIcon = L.icon({
-          iconUrl: '/pin0.png',
+          iconUrl: `/Pin1.png`,
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -24],
@@ -236,7 +238,8 @@ const Map: React.FC<MapProps> = ({
         const pos = markerPosition || center;
 
         const icon = L.icon({
-          iconUrl: '/pin0.png',
+          iconUrl: `/Pin1.png`, 
+
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -48],
@@ -244,7 +247,7 @@ const Map: React.FC<MapProps> = ({
           shadowSize: [41, 41],
           shadowAnchor: [12, 41],
         });
-
+        
         markerRef.current = L.marker(pos, {
           icon,
           draggable: false,
@@ -270,7 +273,7 @@ const Map: React.FC<MapProps> = ({
         const pinMarker = L.marker(pin.position, {
           title: pin.title,
           icon: L.icon({
-            iconUrl: '/pin1.png',
+            iconUrl: `/Pin1.png`,
             iconSize: [48, 48],
             iconAnchor: [24, 48],
             popupAnchor: [0, -48],
