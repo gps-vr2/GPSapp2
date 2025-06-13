@@ -11,6 +11,7 @@ interface RequestData {
   info?: string;
   address?: string; 
   territory_id?: number;
+  congregationId?: number; // Add congregation ID
 }
 
 interface DoorData {
@@ -20,6 +21,46 @@ interface DoorData {
   id_cong_app: number;
   id_cong_lang: number;
 }
+
+// Function to calculate pin color based on congregation and language
+const calculatePinColor = (congregationId: number = 1, language: string = 'english'): number => {
+  // Language-based pin color mapping for congregation 1 (default)
+  const defaultLanguagePinMap: { [key: string]: number } = {
+    'english': 1,
+    'tamil': 2,
+    'hindi': 3,
+    'spanish': 4,
+    'french': 5,
+    'telugu': 6,
+    'malayalam': 7,
+    'kannada': 8,
+    'gujarati': 9,
+    'bengali': 10,
+    'marathi': 11,
+    'punjabi': 12,
+    'urdu': 13,
+    'oriya': 14,
+    'assamese': 15,
+  };
+  
+  let pinColor = 1; // Default
+  
+  if (congregationId === 1) {
+    // Default congregation - use language mapping
+    pinColor = defaultLanguagePinMap[language.toLowerCase()] || 1;
+  } else {
+    // Other congregations - use congregation ID + language offset
+    const languageOffset = defaultLanguagePinMap[language.toLowerCase()] || 1;
+    pinColor = ((congregationId - 1) * 5) + languageOffset;
+    
+    // Ensure we don't exceed 15 colors
+    if (pinColor > 15) {
+      pinColor = ((pinColor - 1) % 15) + 1;
+    }
+  }
+  
+  return pinColor;
+};
 
 // Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS(): Promise<NextResponse> {
@@ -43,14 +84,31 @@ export async function GET(): Promise<NextResponse> {
             Language: {
               select: {
                 Color: true, // ✅ include color from Language table
+                name: true, // Include language name
               }
             }
           }
         },
       },
     });
+    
     const buildingsData = buildings.map(building => {
       const firstDoor = building.Door[0];
+      
+      // Get congregation ID from first door or default to 1
+      const congregationId = firstDoor?.id_cong_app || 1;
+      const language = firstDoor?.Language?.name || 'english';
+      
+      // Calculate pin color based on congregation and language
+      let pinColor = 1; // Default
+      
+      if (firstDoor?.Language?.Color) {
+        // Use color from database if available
+        pinColor = firstDoor.Language.Color;
+      } else {
+        // Calculate based on congregation and language
+        pinColor = calculatePinColor(congregationId, language);
+      }
     
       return {
         id: building.idBuilding,
@@ -58,9 +116,11 @@ export async function GET(): Promise<NextResponse> {
         long: building.long,
         address: building.address,
         numberOfDoors: building.Door.length,
-        pinColor: firstDoor?.Language?.Color ?? 1, // 🔁 use relation
-        pinImage: `/pins/pin${firstDoor?.Language?.Color ?? 1}.png`,
+        pinColor: pinColor,
+        pinImage: `/pins/pin${pinColor}.png`,
         info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
+        congregationId: congregationId, // Include congregation ID in response
+        language: language, // Include language in response
       };
     });
     
@@ -104,7 +164,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const data: RequestData = JSON.parse(bodyText) as RequestData;
     console.log("Received create data:", data);
 
-    const { lat, long, language, numberOfDoors, info, address, territory_id } = data;
+    const { 
+      lat, 
+      long, 
+      language = 'english', 
+      numberOfDoors, 
+      info, 
+      address, 
+      territory_id,
+      congregationId = 1 // Default congregation ID
+    } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
       return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
@@ -132,18 +201,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const doorsToCreate = Math.max(numberOfDoors || 1, doorInfoArray.length);
     
     const doors: DoorData[] = Array.from({ length: doorsToCreate }).map((_, index) => ({
-      language: language ?? 'English',
+      language: language,
       information_name: doorInfoArray[index] || undefined,
       building_id: newBuilding.idBuilding,
-      id_cong_app: 1,
-      id_cong_lang: 1,
+      id_cong_app: congregationId, // Use provided congregation ID
+      id_cong_lang: 1, // This might need to be mapped based on language
     }));
 
     await prisma.door.createMany({ data: doors });
 
+    // Calculate pin color for response
+    const pinColor = calculatePinColor(congregationId, language);
+
     return new NextResponse(JSON.stringify({ 
       message: 'Building created successfully',
-      building: newBuilding 
+      building: {
+        ...newBuilding,
+        pinColor,
+        pinImage: `/pins/pin${pinColor}.png`,
+        congregationId,
+        language
+      }
     }), {
       status: 201,
       headers: {
