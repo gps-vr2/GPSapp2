@@ -38,19 +38,32 @@ export async function GET(): Promise<NextResponse> {
   try {
     const buildings = await prisma.building.findMany({
       include: {
-        Door: true,
+        Door: {
+          include: {
+            Language: {
+              select: {
+                Color: true, // ✅ include color from Language table
+              }
+            }
+          }
+        },
       },
     });
-
-    const buildingsData = buildings.map(building => ({
-      id: building.idBuilding,
-      lat: building.lat,
-      long: building.long,
-      address: building.address,
-      numberOfDoors: building.Door.length,
-      language: building.Door[0]?.language || 'English',
-      info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
-    }));
+    const buildingsData = buildings.map(building => {
+      const firstDoor = building.Door[0];
+    
+      return {
+        id: building.idBuilding,
+        lat: building.lat,
+        long: building.long,
+        address: building.address,
+        numberOfDoors: building.Door.length,
+        pinColor: firstDoor?.Language?.Color ?? 1, // 🔁 use relation
+        pinImage: `/pins/pin${firstDoor?.Language?.Color ?? 1}.png`,
+        info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
+      };
+    });
+    
 
     return new NextResponse(JSON.stringify(buildingsData), {
       status: 200,
