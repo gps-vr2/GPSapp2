@@ -11,7 +11,6 @@ interface Pin {
   numberOfDoors?: number;
   language?: string;
   info?: string;
-  pinColor?: string; // ✅ add this
 }
 
 
