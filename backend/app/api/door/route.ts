@@ -29,18 +29,8 @@ const calculatePinColor = (congregationId: number = 1, language: string = 'engli
     'english': 1,
     'tamil': 2,
     'hindi': 3,
-    'spanish': 4,
-    'french': 5,
-    'telugu': 6,
-    'malayalam': 7,
-    'kannada': 8,
-    'gujarati': 9,
-    'bengali': 10,
-    'marathi': 11,
-    'punjabi': 12,
-    'urdu': 13,
-    'oriya': 14,
-    'assamese': 15,
+    'telugu': 4,
+    'malayalam': 5,
   };
   
   let pinColor = 1; // Default
@@ -80,13 +70,11 @@ export async function GET(): Promise<NextResponse> {
     const buildings = await prisma.building.findMany({
       include: {
         Door: {
-          include: {
-            Language: {
-              select: {
-                Color: true, // ✅ include color from Language table
-                name: true, // Include language name
-              }
-            }
+          select: {
+            language: true,
+            information_name: true,
+            id_cong_app: true,
+            id_cong_lang: true,
           }
         },
       },
@@ -97,18 +85,11 @@ export async function GET(): Promise<NextResponse> {
       
       // Get congregation ID from first door or default to 1
       const congregationId = firstDoor?.id_cong_app || 1;
-      const language = firstDoor?.Language?.name || 'english';
+      // Get language directly from Door table
+      const language = firstDoor?.language || 'english';
       
       // Calculate pin color based on congregation and language
-      let pinColor = 1; // Default
-      
-      if (firstDoor?.Language?.Color) {
-        // Use color from database if available
-        pinColor = firstDoor.Language.Color;
-      } else {
-        // Calculate based on congregation and language
-        pinColor = calculatePinColor(congregationId, language);
-      }
+      const pinColor = calculatePinColor(congregationId, language);
     
       return {
         id: building.idBuilding,
@@ -119,8 +100,8 @@ export async function GET(): Promise<NextResponse> {
         pinColor: pinColor,
         pinImage: `/pins/pin${pinColor}.png`,
         info: building.Door.map(door => door.information_name).filter(Boolean).join(', ') || undefined,
-        congregationId: congregationId, // Include congregation ID in response
-        language: language, // Include language in response
+        congregationId: congregationId,
+        language: language, // This will now show the correct language from database
       };
     });
     
