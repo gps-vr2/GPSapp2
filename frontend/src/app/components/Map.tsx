@@ -5,14 +5,20 @@ import 'leaflet/dist/leaflet.css';
 
 interface Pin {
   id: number;
-  position: [number, number];
+  position: [number, number]; // Make required to match ClientHomePage
   title: string;
   doors?: string[];
   numberOfDoors?: number;
   language?: string;
   info?: string;
+  // Backend format support
+  lat?: number;
+  long?: number;
+  address?: string;
+  pinImage?: string;
+  pinColor?: number;
+  congregationId?: number;
 }
-
 
 interface LeafletHTMLElement extends HTMLElement {
   _leaflet_id?: number;
@@ -34,11 +40,12 @@ interface MapProps {
   onMapMoveEnd?: (lat: number, lng: number) => void;
   showViewToggle?: boolean;
   userLocation?: [number, number] | null;
-  
   onPinClick?: (pin: Pin) => void;
   selectedPin?: Pin | null;
   isEditing?: boolean;
   onPositionUpdate?: (lat: number, long: number) => void;
+  selectedLanguage?: string;
+  congregationId?: number;
 }
 
 const Map: React.FC<MapProps> = ({
@@ -55,12 +62,8 @@ const Map: React.FC<MapProps> = ({
   onMapMoveEnd,
   showViewToggle = false,
   userLocation,
-  
-
-  // Remove unused props to avoid eslint errors
-  // selectedPin,
-  // isEditing,
-  // onPositionUpdate,
+  selectedLanguage = 'english',
+  congregationId = 1,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -71,6 +74,67 @@ const Map: React.FC<MapProps> = ({
   const isInitializedRef = useRef(false);
   const [currentMapView, setCurrentMapView] = useState<'map' | 'satellite'>(mapView);
 
+  // Function to calculate pin color based on congregation and language
+  const calculatePinColor = (congregationId: number = 1, language: string = 'english'): number => {
+    const defaultLanguagePinMap: { [key: string]: number } = {
+      'english': 1,
+      'tamil': 2,
+      'hindi': 3,
+      'telugu': 4,
+      'malayalam': 5,
+    };
+    
+    let pinColor = 1;
+    
+    if (congregationId === 1) {
+      pinColor = defaultLanguagePinMap[language.toLowerCase()] || 1;
+    } else {
+      const languageOffset = defaultLanguagePinMap[language.toLowerCase()] || 1;
+      pinColor = ((congregationId - 1) * 5) + languageOffset;
+      
+      if (pinColor > 15) {
+        pinColor = ((pinColor - 1) % 15) + 1;
+      }
+    }
+    
+    return pinColor;
+  };
+
+  // Function to get pin image
+  const getPinImage = (pin: Pin, fallbackLanguage?: string, fallbackCongId?: number) => {
+    if (pin.pinImage) {
+      console.log(`Using pinImage from backend: ${pin.pinImage}`);
+      return pin.pinImage;
+    }
+    
+    if (pin.pinColor) {
+      console.log(`Using pinColor from backend: ${pin.pinColor}`);
+      return `/pins/pin${pin.pinColor}.png`;
+    }
+    
+    const language = pin.language || fallbackLanguage || selectedLanguage || 'english';
+    const congId = pin.congregationId || fallbackCongId || congregationId || 1;
+    
+    console.log(`Calculating pin color for language: ${language}, congregation: ${congId}`);
+    
+    const pinColor = calculatePinColor(congId, language);
+    console.log(`Calculated pin color: ${pinColor}`);
+    
+    return `/pins/pin${pinColor}.png`;
+  };
+
+  // Function to normalize pin data (handle both old and new formats)
+  const normalizePin = (pin: Pin): Pin => {
+    // If position is already set, use it; otherwise construct from lat/long
+    const position: [number, number] = pin.position || [pin.lat || 0, pin.long || 0];
+    
+    return {
+      ...pin,
+      position,
+      title: pin.title || pin.address || 'Unknown Location',
+    };
+  };
+
   const handlePositionChange = useCallback((position: [number, number]) => {
     onPositionChange?.(position);
   }, [onPositionChange]);
@@ -78,7 +142,6 @@ const Map: React.FC<MapProps> = ({
   const handleMapDoubleClick = useCallback((position: [number, number]) => {
     onMapDoubleClick?.(position);
   }, [onMapDoubleClick]);
-
 
   const handleMapMoveEnd = useCallback(() => {
     if (mapInstanceRef.current && onMapMoveEnd) {
@@ -93,6 +156,7 @@ const Map: React.FC<MapProps> = ({
     if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
       delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
     }
+    
     const initializeMap = async () => {
       const L = await import('leaflet');
       const map = L.map(mapRef.current!, {
@@ -203,8 +267,10 @@ const Map: React.FC<MapProps> = ({
       }
 
       if (userLocation) {
+        const pinImageUrl = getPinImage({} as Pin, selectedLanguage, congregationId);
+        
         const userIcon = L.icon({
-          iconUrl: `/Pin1.png`,
+          iconUrl: pinImageUrl,
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -24],
@@ -220,7 +286,7 @@ const Map: React.FC<MapProps> = ({
     };
 
     updateUserMarker();
-  }, [userLocation]);
+  }, [userLocation, selectedLanguage, congregationId]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
@@ -235,10 +301,10 @@ const Map: React.FC<MapProps> = ({
 
       if (showMarker || showDraggablePin) {
         const pos = markerPosition || center;
+        const pinImageUrl = getPinImage({} as Pin, selectedLanguage, congregationId);
 
         const icon = L.icon({
-          iconUrl: `/Pin1.png`, 
-
+          iconUrl: pinImageUrl,
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -48],
@@ -255,7 +321,7 @@ const Map: React.FC<MapProps> = ({
     };
 
     updateMarker();
-  }, [showMarker, showDraggablePin, markerPosition, center]);
+  }, [showMarker, showDraggablePin, markerPosition, center, selectedLanguage, congregationId]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
@@ -269,10 +335,21 @@ const Map: React.FC<MapProps> = ({
       pinMarkersRef.current = [];
 
       pins.forEach(pin => {
-        const pinMarker = L.marker(pin.position, {
-          title: pin.title,
+        const normalizedPin = normalizePin(pin);
+        const pinImageUrl = getPinImage(pin);
+        
+        console.log(`Pin ${pin.id}:`, {
+          language: pin.language,
+          congregationId: pin.congregationId,
+          pinColor: pin.pinColor,
+          pinImage: pin.pinImage,
+          calculatedImage: pinImageUrl
+        });
+        
+        const pinMarker = L.marker(normalizedPin.position, {
+          title: normalizedPin.title,
           icon: L.icon({
-            iconUrl: `/Pin1.png`,
+            iconUrl: pinImageUrl,
             iconSize: [48, 48],
             iconAnchor: [24, 48],
             popupAnchor: [0, -48],
@@ -335,74 +412,6 @@ const Map: React.FC<MapProps> = ({
               onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'"
               onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">×</button>
               
-              <!-- Animated bubbles -->
-              <div style="
-                position: absolute;
-                width: 8px;
-                height: 8px;
-                background: rgba(255, 255, 255, 0.4);
-                border-radius: 50%;
-                top: 80%;
-                left: 10%;
-                animation: bubble1 4s ease-in-out infinite;
-                pointer-events: none;
-              "></div>
-              <div style="
-                position: absolute;
-                width: 12px;
-                height: 12px;
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 50%;
-                top: 70%;
-                left: 80%;
-                animation: bubble2 5s ease-in-out infinite 0.5s;
-                pointer-events: none;
-              "></div>
-              <div style="
-                position: absolute;
-                width: 6px;
-                height: 6px;
-                background: rgba(255, 255, 255, 0.5);
-                border-radius: 50%;
-                top: 90%;
-                left: 50%;
-                animation: bubble3 3.5s ease-in-out infinite 1s;
-                pointer-events: none;
-              "></div>
-              <div style="
-                position: absolute;
-                width: 10px;
-                height: 10px;
-                background: rgba(255, 255, 255, 0.35);
-                border-radius: 50%;
-                top: 85%;
-                left: 25%;
-                animation: bubble4 4.5s ease-in-out infinite 1.5s;
-                pointer-events: none;
-              "></div>
-              <div style="
-                position: absolute;
-                width: 7px;
-                height: 7px;
-                background: rgba(255, 255, 255, 0.4);
-                border-radius: 50%;
-                top: 75%;
-                left: 70%;
-                animation: bubble5 3.8s ease-in-out infinite 2s;
-                pointer-events: none;
-              "></div>
-              <div style="
-                position: absolute;
-                width: 9px;
-                height: 9px;
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 50%;
-                top: 95%;
-                left: 15%;
-                animation: bubble6 4.2s ease-in-out infinite 0.8s;
-                pointer-events: none;
-              "></div>
-              
               <!-- Content -->
               <div style="position: relative; z-index: 10;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
@@ -419,7 +428,14 @@ const Map: React.FC<MapProps> = ({
                     line-height: 1.3;
                     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
                     font-weight: 600;
-                  ">${pin.title || 'No address'}</strong>
+                  ">${normalizedPin.title || 'No address'}</strong>
+                </div>
+                <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.9;">
+                  ${pin.info ? `Info: ${pin.info}` : ''}
+                  ${pin.numberOfDoors ? `<br>Doors: ${pin.numberOfDoors}` : ''}
+                  ${pin.congregationId ? `<br>Congregation: ${pin.congregationId}` : ''}
+                  ${pin.language ? `<br>Language: ${pin.language}` : ''}
+                  ${pin.pinColor ? `<br>Pin Color: ${pin.pinColor}` : ''}
                 </div>
                 <a href="/building/edit?id=${pin.id}"
                   style="
@@ -456,143 +472,6 @@ const Map: React.FC<MapProps> = ({
                   ✏️ Edit
                 </a>
               </div>
-              
-              <style>
-                /* Hide default Leaflet popup styles */
-                .leaflet-popup-content-wrapper {
-                  background: transparent !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                }
-                
-                .leaflet-popup-content {
-                  margin: 0 !important;
-                  padding: 0 !important;
-                }
-                
-                .leaflet-popup-close-button {
-                  display: none !important;
-                }
-                
-                .leaflet-popup-tip-container {
-                  display: none !important;
-                }
-                
-                @keyframes popIn {
-                  0% { 
-                    opacity: 0; 
-                    transform: translateY(30px) scale(0.8); 
-                  }
-                  100% { 
-                    opacity: 1; 
-                    transform: translateY(0) scale(1); 
-                  }
-                }
-                
-                @keyframes bubble1 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-120px) scale(0.3);
-                    opacity: 0;
-                  }
-                }
-                
-                @keyframes bubble2 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-100px) scale(0.2);
-                    opacity: 0;
-                  }
-                }
-                
-                @keyframes bubble3 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-130px) scale(0.1);
-                    opacity: 0;
-                  }
-                }
-                
-                @keyframes bubble4 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-110px) scale(0.4);
-                    opacity: 0;
-                  }
-                }
-                
-                @keyframes bubble5 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-95px) scale(0.2);
-                    opacity: 0;
-                  }
-                }
-                
-                @keyframes bubble6 {
-                  0% { 
-                    transform: translateY(0) scale(1);
-                    opacity: 0;
-                  }
-                  10% {
-                    opacity: 1;
-                  }
-                  90% {
-                    opacity: 1;
-                  }
-                  100% { 
-                    transform: translateY(-115px) scale(0.3);
-                    opacity: 0;
-                  }
-                }
-              </style>
             </div>
           `, {
             closeButton: false,
@@ -604,7 +483,7 @@ const Map: React.FC<MapProps> = ({
     };
 
     updatePins();
-  }, [pins]);
+  }, [pins, selectedLanguage, congregationId]);
 
   const handleViewToggle = (view: 'map' | 'satellite') => {
     setCurrentMapView(view);
