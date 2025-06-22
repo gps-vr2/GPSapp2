@@ -15,6 +15,7 @@ model Building {
   territory_id  Int?       @db.UnsignedMediumInt
   last_modified DateTime   @default(now()) @db.Timestamp(0)
   address       String?    @db.VarChar(255)
+  updatedAt     DateTime?  @db.Timestamp(0)
   Territory     Territory? @relation(fields: [territory_id], references: [idTerritory], onDelete: Cascade, map: "idTerritory")
   Door          Door[]
 
@@ -22,11 +23,14 @@ model Building {
 }
 
 model Congregation {
-  idCongregation Int         @id @default(autoincrement()) @db.UnsignedMediumInt
+  idCongregation Int         @id @db.UnsignedMediumInt
   name           String?     @db.VarChar(255)
   language       String?     @db.VarChar(100)
+  createdAt      DateTime    @default(now()) @db.Timestamp(0)
+  updatedAt      DateTime?   @db.Timestamp(0)
   Door           Door[]
   Language       Language[]
+  Login          Login[]
   Publisher      Publisher[]
   Territory      Territory[]
 }
@@ -37,11 +41,12 @@ model Door {
   information_name String?      @db.Text
   building_id      Int?         @db.UnsignedInt
   id_cong_app      Int          @db.UnsignedMediumInt
-  id_cong_lang     Int          @db.UnsignedMediumInt
+  id_cong_lang     Int          @db.UnsignedInt
   lastModified     DateTime?    @default(now()) @db.Timestamp(0)
+  updatedAt        DateTime?    @db.Timestamp(0)
   Building         Building?    @relation(fields: [building_id], references: [idBuilding], onDelete: Cascade, map: "idBuilding")
-  Congregation     Congregation @relation(fields: [id_cong_app], references: [idCongregation], onDelete: Cascade, map: "id_cong_app1")
-  Language         Language     @relation(fields: [id_cong_lang], references: [id_cong_app], onDelete: NoAction, onUpdate: NoAction, map: "id_cong_lang")
+  Congregation     Congregation @relation(fields: [id_cong_app], references: [idCongregation], onDelete: Cascade, onUpdate: NoAction, map: "id_cong_app1")
+  Language         Language     @relation(fields: [id_cong_lang], references: [idLanguage], onDelete: NoAction, onUpdate: NoAction, map: "id_cong_lang")
 
   @@index([building_id], map: "idBuilding_idx")
   @@index([id_cong_app], map: "id_cong_app_idx")
@@ -50,12 +55,14 @@ model Door {
 
 model Language {
   idLanguage   Int          @id @default(autoincrement()) @db.UnsignedInt
-  id_cong_app  Int          @db.UnsignedMediumInt @unique
+  id_cong_app  Int          @db.UnsignedMediumInt
   id_cong_lang Int          @db.UnsignedMediumInt
   name         String       @db.VarChar(100)
   Color        Int?         @db.UnsignedTinyInt
+  createdAt    DateTime     @default(now()) @db.Timestamp(0)
+  updatedAt    DateTime?    @db.Timestamp(0)
   Door         Door[]
-  Congregation Congregation @relation(fields: [id_cong_app], references: [idCongregation], onDelete: Cascade, map: "id_cong_app")
+  Congregation Congregation @relation(fields: [id_cong_app], references: [idCongregation], onDelete: Cascade, onUpdate: NoAction, map: "id_cong_app")
 
   @@index([id_cong_app], map: "id_cong_app_idx")
 }
@@ -64,7 +71,9 @@ model Publisher {
   idPublisher     Int           @id @default(autoincrement()) @db.UnsignedMediumInt
   name            String?       @db.VarChar(255)
   congregation_id Int?          @db.UnsignedMediumInt
-  Congregation    Congregation? @relation(fields: [congregation_id], references: [idCongregation], onDelete: Cascade, map: "idCongregation2")
+  createdAt       DateTime      @default(now()) @db.Timestamp(0)
+  updatedAt       DateTime?     @db.Timestamp(0)
+  Congregation    Congregation? @relation(fields: [congregation_id], references: [idCongregation], onDelete: Cascade, onUpdate: NoAction, map: "idCongregation2")
 
   @@index([congregation_id], map: "idCongregation_idx")
 }
@@ -73,10 +82,39 @@ model Territory {
   idTerritory     Int           @id @default(autoincrement()) @db.UnsignedMediumInt
   name            String?       @db.VarChar(255)
   congregation_id Int?          @db.UnsignedMediumInt
+  createdAt       DateTime      @default(now()) @db.Timestamp(0)
+  updatedAt       DateTime?     @db.Timestamp(0)
   Building        Building[]
-  Congregation    Congregation? @relation(fields: [congregation_id], references: [idCongregation], onDelete: Cascade, map: "idCongregation")
+  Congregation    Congregation? @relation(fields: [congregation_id], references: [idCongregation], onDelete: Cascade, onUpdate: NoAction, map: "idCongregation")
 
   @@index([congregation_id], map: "idCongregation_idx")
+}
+
+model App1Entry {
+  id        Int       @id @default(autoincrement())
+  id_cong   Int
+  Gps       String
+  Landmark  String
+  Territory String
+  Url       String
+  createdAt DateTime  @default(now()) @db.Timestamp(0)
+  updatedAt DateTime? @db.Timestamp(0)
+}
+
+model Login {
+  id                 Int          @id @default(autoincrement()) @db.UnsignedInt
+  name               String       @db.VarChar(100)
+  email              String       @unique @db.VarChar(150)
+  password           String       @db.VarChar(255)
+  googleSignIn       Boolean      @default(false)
+  whatsapp           String       @db.VarChar(20)
+  congregationNumber Int          @db.UnsignedMediumInt
+  createdAt          DateTime     @default(now()) @db.Timestamp(0)
+  updatedAt          DateTime
+  loginCount         Int          @default(0)
+  Congregation       Congregation @relation(fields: [congregationNumber], references: [idCongregation], onDelete: Cascade, onUpdate: NoAction, map: "LoginToCongregation")
+
+  @@index([congregationNumber], map: "Login_cong_idx")
 }
 
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
