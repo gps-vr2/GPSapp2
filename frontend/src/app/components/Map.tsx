@@ -46,6 +46,7 @@ interface MapProps {
   onPositionUpdate?: (lat: number, long: number) => void;
   selectedLanguage?: string;
   congregationId?: number;
+  autoFitBounds?: boolean; // New prop to control auto-fitting
 }
 
 const Map: React.FC<MapProps> = ({
@@ -64,6 +65,7 @@ const Map: React.FC<MapProps> = ({
   userLocation,
   selectedLanguage = 'english',
   congregationId = 1,
+  autoFitBounds = true, // Default to true for auto-fitting
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -73,6 +75,57 @@ const Map: React.FC<MapProps> = ({
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
   const isInitializedRef = useRef(false);
   const [currentMapView, setCurrentMapView] = useState<'map' | 'satellite'>(mapView);
+  const [currentUserLocation, setCurrentUserLocation] = useState<[number, number] | null>(userLocation || null);
+
+  // Function to calculate bounds that contain all pins
+  const calculateBounds = useCallback((pins: Pin[]): L.LatLngBounds | null => {
+    if (pins.length === 0) return null;
+
+    const normalizedPins = pins.map(pin => normalizePin(pin));
+    let minLat = Number.MAX_VALUE;
+    let maxLat = Number.MIN_VALUE;
+    let minLng = Number.MAX_VALUE;
+    let maxLng = Number.MIN_VALUE;
+
+    normalizedPins.forEach(pin => {
+      const [lat, lng] = pin.position;
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    });
+
+    // Include user location in bounds if available
+    if (currentUserLocation) {
+      const [userLat, userLng] = currentUserLocation;
+      minLat = Math.min(minLat, userLat);
+      maxLat = Math.max(maxLat, userLat);
+      minLng = Math.min(minLng, userLng);
+      maxLng = Math.max(maxLng, userLng);
+    }
+
+    // Add some padding to the bounds
+    const padding = 0.01;
+    minLat -= padding;
+    maxLat += padding;
+    minLng -= padding;
+    maxLng += padding;
+
+    return new (window as any).L.LatLngBounds(
+      [minLat, minLng],
+      [maxLat, maxLng]
+    );
+  }, [currentUserLocation]);
+
+  // Function to fit map to bounds
+  const fitMapToBounds = useCallback((bounds: L.LatLngBounds) => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(bounds, {
+        padding: [50, 50], // Add some padding around the bounds
+        maxZoom: 15 // Limit maximum zoom level
+      });
+    }
+  }, []);
 
   // Function to calculate pin color based on congregation and language
   const calculatePinColor = (congregationId: number = 1, language: string = 'english'): number => {
@@ -150,8 +203,22 @@ const Map: React.FC<MapProps> = ({
     }
   }, [onMapMoveEnd]);
 
+  // Initialize map and user location
   useEffect(() => {
     if (!mapRef.current) return;
+
+    // Try to get user location from localStorage if not provided
+    if (!currentUserLocation) {
+      const savedLocation = localStorage.getItem('userLocation');
+      if (savedLocation) {
+        try {
+          const location = JSON.parse(savedLocation) as [number, number];
+          setCurrentUserLocation(location);
+        } catch (e) {
+          console.error('Failed to parse saved location', e);
+        }
+      }
+    }
 
     if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
       delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
@@ -197,6 +264,23 @@ const Map: React.FC<MapProps> = ({
         markerRef.current?.setLatLng(e.latlng);
       });
 
+      // Add user location marker if available
+      if (currentUserLocation) {
+        const userIcon = L.icon({
+          iconUrl: '/pins/pin0.png',
+          iconSize: [48, 55],
+          iconAnchor: [24, 48],
+          popupAnchor: [0, -24],
+        });
+
+        userLocationMarkerRef.current = L.marker(currentUserLocation, {
+          icon: userIcon,
+          title: 'Your Location',
+          zIndexOffset: 1000 // Ensure it's above other markers
+        }).addTo(map)
+          .bindPopup('Your Current Location');
+      }
+
       setTimeout(() => {
         map.invalidateSize();
       }, 100);
@@ -216,7 +300,26 @@ const Map: React.FC<MapProps> = ({
         isInitializedRef.current = false;
       }
     };
-  }, [center, currentMapView, handleMapDoubleClick, handlePositionChange, handleMapMoveEnd, zoom]);
+  }, [center, currentMapView, handleMapDoubleClick, handlePositionChange, handleMapMoveEnd, zoom, currentUserLocation]);
+
+  // Update user location when it changes
+  useEffect(() => {
+    if (userLocation) {
+      setCurrentUserLocation(userLocation);
+      // Save to localStorage for persistence
+      localStorage.setItem('userLocation', JSON.stringify(userLocation));
+    }
+  }, [userLocation]);
+
+  // Fit map to bounds when pins change (if autoFitBounds is enabled)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isInitializedRef.current || !autoFitBounds) return;
+
+    const bounds = calculateBounds(pins);
+    if (bounds) {
+      fitMapToBounds(bounds);
+    }
+  }, [pins, autoFitBounds, calculateBounds, fitMapToBounds]);
 
   useEffect(() => {
     if (mapInstanceRef.current && isInitializedRef.current) {
@@ -256,37 +359,39 @@ const Map: React.FC<MapProps> = ({
     updateTileLayer();
   }, [currentMapView]);
 
+  // Update user location marker
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
     const updateUserMarker = async () => {
       const L = await import('leaflet');
+      
+      // Remove existing marker if it exists
       if (userLocationMarkerRef.current) {
         mapInstanceRef.current!.removeLayer(userLocationMarkerRef.current);
         userLocationMarkerRef.current = null;
       }
 
-      if (userLocation) {
-        const pinImageUrl = getPinImage({} as Pin, selectedLanguage, congregationId);
-        
+      // Add new marker if we have a location
+      if (currentUserLocation) {
         const userIcon = L.icon({
-          iconUrl: pinImageUrl,
+          iconUrl: '/pins/pin0.png',
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -24],
         });
 
-        userLocationMarkerRef.current = L.marker(userLocation, {
+        userLocationMarkerRef.current = L.marker(currentUserLocation, {
           icon: userIcon,
           title: 'Your Location',
-        })
-          .addTo(mapInstanceRef.current!)
+          zIndexOffset: 1000 // Ensure it's above other markers
+        }).addTo(mapInstanceRef.current!)
           .bindPopup('Your Current Location');
       }
     };
 
     updateUserMarker();
-  }, [userLocation, selectedLanguage, congregationId]);
+  }, [currentUserLocation]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
@@ -359,334 +464,332 @@ const Map: React.FC<MapProps> = ({
           }),
         })
           .addTo(mapInstanceRef.current!)
-// Replace the .bindPopup() section in your Map.tsx with this:
-
-.bindPopup(`
-  <div style="
-    position: relative;
-    background: linear-gradient(135deg, 
-      rgba(147, 51, 234, 1) 0%, 
-      rgba(79, 70, 229, 1) 35%, 
-      rgba(59, 130, 246, 1) 70%, 
-      rgba(16, 185, 129, 1) 100%
-    );
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
-    padding: 20px;
-    box-shadow: 
-      0 25px 50px rgba(0, 0, 0, 0.6),
-      0 15px 35px rgba(147, 51, 234, 0.4),
-      0 0 40px rgba(79, 70, 229, 0.3),
-      inset 0 2px 0 rgba(255, 255, 255, 0.1),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.2);
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-    color: white;
-    max-width: 280px;
-    min-height: 90px;
-    font-size: 13px;
-    overflow: hidden;
-    animation: popIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-    margin: 0;
-  ">
-    
-    <!-- Custom close button -->
-    <button onclick="this.closest('.leaflet-popup').style.display='none'" style="
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      color: white;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-      z-index: 20;
-      backdrop-filter: blur(10px);
-    " 
-    onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'"
-    onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">×</button>
-    
-    <!-- Animated bubbles -->
-    <div style="
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.4);
-      border-radius: 50%;
-      top: 80%;
-      left: 10%;
-      animation: bubble1 4s ease-in-out infinite;
-      pointer-events: none;
-    "></div>
-    <div style="
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      background: rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      top: 70%;
-      left: 80%;
-      animation: bubble2 5s ease-in-out infinite 0.5s;
-      pointer-events: none;
-    "></div>
-    <div style="
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.5);
-      border-radius: 50%;
-      top: 90%;
-      left: 50%;
-      animation: bubble3 3.5s ease-in-out infinite 1s;
-      pointer-events: none;
-    "></div>
-    <div style="
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      background: rgba(255, 255, 255, 0.35);
-      border-radius: 50%;
-      top: 85%;
-      left: 25%;
-      animation: bubble4 4.5s ease-in-out infinite 1.5s;
-      pointer-events: none;
-    "></div>
-    <div style="
-      position: absolute;
-      width: 7px;
-      height: 7px;
-      background: rgba(255, 255, 255, 0.4);
-      border-radius: 50%;
-      top: 75%;
-      left: 70%;
-      animation: bubble5 3.8s ease-in-out infinite 2s;
-      pointer-events: none;
-    "></div>
-    <div style="
-      position: absolute;
-      width: 9px;
-      height: 9px;
-      background: rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      top: 95%;
-      left: 15%;
-      animation: bubble6 4.2s ease-in-out infinite 0.8s;
-      pointer-events: none;
-    "></div>
-    
-    <!-- Content -->
-    <div style="position: relative; z-index: 10;">
-      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
-        <div style="
-          padding: 8px; 
-          background: linear-gradient(45deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.15));
-          border-radius: 14px;
-          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        ">
-          🏢
-        </div>
-        <strong style="
-          font-size: 15px; 
-          line-height: 1.3;
-          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-          font-weight: 600;
-        ">${normalizedPin.title || 'No address'}</strong>
-      </div>
-      
-      <!-- Building Information -->
-      <div style="margin-bottom: 15px; font-size: 12px; opacity: 0.9; line-height: 1.4;">
-        ${pin.info ? `<div style="margin-bottom: 4px;">Info: ${pin.info}</div>` : ''}
-        ${pin.numberOfDoors ? `<div style="margin-bottom: 4px;">Doors: ${pin.numberOfDoors}</div>` : ''}
-        ${pin.congregationId ? `<div style="margin-bottom: 4px;">Congregation: ${pin.congregationId}</div>` : ''}
-        ${pin.language ? `<div style="margin-bottom: 4px;">Language: ${pin.language}</div>` : ''}
-        ${pin.pinColor ? `<div style="margin-bottom: 4px;">Pin Color: ${pin.pinColor}</div>` : ''}
-      </div>
-      
-      <a href="/building/edit?id=${pin.id}"
-        style="
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.25) 0%, 
-            rgba(255, 255, 255, 0.1) 100%);
-          padding: 10px 18px;
-          border-radius: 16px;
-          color: white;
-          font-weight: 600;
-          font-size: 12px;
-          text-decoration: none;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-          position: relative;
-          overflow: hidden;
-        "
-        onmouseover="
-          this.style.background='linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.2) 100%)';
-          this.style.transform='translateY(-2px)';
-          this.style.boxShadow='0 8px 25px rgba(0, 0, 0, 0.3)';
-        "
-        onmouseout="
-          this.style.background='linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.1) 100%)';
-          this.style.transform='translateY(0)';
-          this.style.boxShadow='0 4px 15px rgba(0, 0, 0, 0.2)';
-        "
-      >
-        ✏️ Edit
-      </a>
-    </div>
-  </div>
-  
-  <style>
-    /* Hide default Leaflet popup styles */
-    .leaflet-popup-content-wrapper {
-      background: transparent !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-    }
-    
-    .leaflet-popup-content {
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    
-    .leaflet-popup-close-button {
-      display: none !important;
-    }
-    
-    .leaflet-popup-tip-container {
-      display: none !important;
-    }
-    
-    @keyframes popIn {
-      0% { 
-        opacity: 0; 
-        transform: translateY(30px) scale(0.8); 
-      }
-      100% { 
-        opacity: 1; 
-        transform: translateY(0) scale(1); 
-      }
-    }
-    
-    @keyframes bubble1 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-120px) scale(0.3);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes bubble2 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-100px) scale(0.2);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes bubble3 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-130px) scale(0.1);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes bubble4 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-110px) scale(0.4);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes bubble5 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-95px) scale(0.2);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes bubble6 {
-      0% { 
-        transform: translateY(0) scale(1);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% { 
-        transform: translateY(-115px) scale(0.3);
-        opacity: 0;
-      }
-    }
-  </style>
-  `, {
-    closeButton: false,
-    className: 'custom-popup'
-  });
+          .bindPopup(`
+            <div style="
+              position: relative;
+              background: linear-gradient(135deg, 
+                rgba(147, 51, 234, 1) 0%, 
+                rgba(79, 70, 229, 1) 35%, 
+                rgba(59, 130, 246, 1) 70%, 
+                rgba(16, 185, 129, 1) 100%
+              );
+              backdrop-filter: blur(20px);
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              border-radius: 24px;
+              padding: 20px;
+              box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.6),
+                0 15px 35px rgba(147, 51, 234, 0.4),
+                0 0 40px rgba(79, 70, 229, 0.3),
+                inset 0 2px 0 rgba(255, 255, 255, 0.1),
+                inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+              font-family: 'Inter', 'Segoe UI', sans-serif;
+              color: white;
+              max-width: 280px;
+              min-height: 90px;
+              font-size: 13px;
+              overflow: hidden;
+              animation: popIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+              margin: 0;
+            ">
+              
+              <!-- Custom close button -->
+              <button onclick="this.closest('.leaflet-popup').style.display='none'" style="
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s ease;
+                z-index: 20;
+                backdrop-filter: blur(10px);
+              " 
+              onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'"
+              onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">×</button>
+              
+              <!-- Animated bubbles -->
+              <div style="
+                position: absolute;
+                width: 8px;
+                height: 8px;
+                background: rgba(255, 255, 255, 0.4);
+                border-radius: 50%;
+                top: 80%;
+                left: 10%;
+                animation: bubble1 4s ease-in-out infinite;
+                pointer-events: none;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 12px;
+                height: 12px;
+                background: rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                top: 70%;
+                left: 80%;
+                animation: bubble2 5s ease-in-out infinite 0.5s;
+                pointer-events: none;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 6px;
+                height: 6px;
+                background: rgba(255, 255, 255, 0.5);
+                border-radius: 50%;
+                top: 90%;
+                left: 50%;
+                animation: bubble3 3.5s ease-in-out infinite 1s;
+                pointer-events: none;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 10px;
+                height: 10px;
+                background: rgba(255, 255, 255, 0.35);
+                border-radius: 50%;
+                top: 85%;
+                left: 25%;
+                animation: bubble4 4.5s ease-in-out infinite 1.5s;
+                pointer-events: none;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 7px;
+                height: 7px;
+                background: rgba(255, 255, 255, 0.4);
+                border-radius: 50%;
+                top: 75%;
+                left: 70%;
+                animation: bubble5 3.8s ease-in-out infinite 2s;
+                pointer-events: none;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 9px;
+                height: 9px;
+                background: rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                top: 95%;
+                left: 15%;
+                animation: bubble6 4.2s ease-in-out infinite 0.8s;
+                pointer-events: none;
+              "></div>
+              
+              <!-- Content -->
+              <div style="position: relative; z-index: 10;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
+                  <div style="
+                    padding: 8px; 
+                    background: linear-gradient(45deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.15));
+                    border-radius: 14px;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                  ">
+                    🏢
+                  </div>
+                  <strong style="
+                    font-size: 15px; 
+                    line-height: 1.3;
+                    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+                    font-weight: 600;
+                  ">${normalizedPin.title || 'No address'}</strong>
+                </div>
+                
+                <!-- Building Information -->
+                <div style="margin-bottom: 15px; font-size: 12px; opacity: 0.9; line-height: 1.4;">
+                  ${pin.info ? `<div style="margin-bottom: 4px;">Info: ${pin.info}</div>` : ''}
+                  ${pin.numberOfDoors ? `<div style="margin-bottom: 4px;">Doors: ${pin.numberOfDoors}</div>` : ''}
+                  ${pin.congregationId ? `<div style="margin-bottom: 4px;">Congregation: ${pin.congregationId}</div>` : ''}
+                  ${pin.language ? `<div style="margin-bottom: 4px;">Language: ${pin.language}</div>` : ''}
+                  ${pin.pinColor ? `<div style="margin-bottom: 4px;">Pin Color: ${pin.pinColor}</div>` : ''}
+                </div>
+                
+                <a href="/building/edit?id=${pin.id}"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: linear-gradient(135deg, 
+                      rgba(255, 255, 255, 0.25) 0%, 
+                      rgba(255, 255, 255, 0.1) 100%);
+                    padding: 10px 18px;
+                    border-radius: 16px;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 12px;
+                    text-decoration: none;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                    position: relative;
+                    overflow: hidden;
+                  "
+                  onmouseover="
+                    this.style.background='linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.2) 100%)';
+                    this.style.transform='translateY(-2px)';
+                    this.style.boxShadow='0 8px 25px rgba(0, 0, 0, 0.3)';
+                  "
+                  onmouseout="
+                    this.style.background='linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.1) 100%)';
+                    this.style.transform='translateY(0)';
+                    this.style.boxShadow='0 4px 15px rgba(0, 0, 0, 0.2)';
+                  "
+                >
+                  ✏️ Edit
+                </a>
+              </div>
+            </div>
+            
+            <style>
+              /* Hide default Leaflet popup styles */
+              .leaflet-popup-content-wrapper {
+                background: transparent !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              .leaflet-popup-content {
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              
+              .leaflet-popup-close-button {
+                display: none !important;
+              }
+              
+              .leaflet-popup-tip-container {
+                display: none !important;
+              }
+              
+              @keyframes popIn {
+                0% { 
+                  opacity: 0; 
+                  transform: translateY(30px) scale(0.8); 
+                }
+                100% { 
+                  opacity: 1; 
+                  transform: translateY(0) scale(1); 
+                }
+              }
+              
+              @keyframes bubble1 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-120px) scale(0.3);
+                  opacity: 0;
+                }
+              }
+              
+              @keyframes bubble2 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-100px) scale(0.2);
+                  opacity: 0;
+                }
+              }
+              
+              @keyframes bubble3 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-130px) scale(0.1);
+                  opacity: 0;
+                }
+              }
+              
+              @keyframes bubble4 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-110px) scale(0.4);
+                  opacity: 0;
+                }
+              }
+              
+              @keyframes bubble5 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-95px) scale(0.2);
+                  opacity: 0;
+                }
+              }
+              
+              @keyframes bubble6 {
+                0% { 
+                  transform: translateY(0) scale(1);
+                  opacity: 0;
+                }
+                10% {
+                  opacity: 1;
+                }
+                90% {
+                  opacity: 1;
+                }
+                100% { 
+                  transform: translateY(-115px) scale(0.3);
+                  opacity: 0;
+                }
+              }
+            </style>
+            `, {
+              closeButton: false,
+              className: 'custom-popup'
+            });
 
         pinMarkersRef.current.push(pinMarker);
       });
