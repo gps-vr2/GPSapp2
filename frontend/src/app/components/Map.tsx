@@ -5,13 +5,12 @@ import 'leaflet/dist/leaflet.css';
 
 interface Pin {
   id: number;
-  position: [number, number]; // Make required to match ClientHomePage
+  position: [number, number];
   title: string;
   doors?: string[];
   numberOfDoors?: number;
   language?: string;
   info?: string;
-  // Backend format support
   lat?: number;
   long?: number;
   address?: string;
@@ -46,7 +45,16 @@ interface MapProps {
   onPositionUpdate?: (lat: number, long: number) => void;
   selectedLanguage?: string;
   congregationId?: number;
-  autoFitBounds?: boolean; // New prop to control auto-fitting
+  autoFitBounds?: boolean;
+}
+
+declare global {
+  interface Window {
+    L: {
+      LatLngBounds: new (southWest: [number, number], northEast: [number, number]) => L.LatLngBounds;
+      // Add other Leaflet types as needed
+    };
+  }
 }
 
 const Map: React.FC<MapProps> = ({
@@ -65,7 +73,7 @@ const Map: React.FC<MapProps> = ({
   userLocation,
   selectedLanguage = 'english',
   congregationId = 1,
-  autoFitBounds = true, // Default to true for auto-fitting
+  autoFitBounds = true,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -77,58 +85,7 @@ const Map: React.FC<MapProps> = ({
   const [currentMapView, setCurrentMapView] = useState<'map' | 'satellite'>(mapView);
   const [currentUserLocation, setCurrentUserLocation] = useState<[number, number] | null>(userLocation || null);
 
-  // Function to calculate bounds that contain all pins
-  const calculateBounds = useCallback((pins: Pin[]): L.LatLngBounds | null => {
-    if (pins.length === 0) return null;
-
-    const normalizedPins = pins.map(pin => normalizePin(pin));
-    let minLat = Number.MAX_VALUE;
-    let maxLat = Number.MIN_VALUE;
-    let minLng = Number.MAX_VALUE;
-    let maxLng = Number.MIN_VALUE;
-
-    normalizedPins.forEach(pin => {
-      const [lat, lng] = pin.position;
-      minLat = Math.min(minLat, lat);
-      maxLat = Math.max(maxLat, lat);
-      minLng = Math.min(minLng, lng);
-      maxLng = Math.max(maxLng, lng);
-    });
-
-    // Include user location in bounds if available
-    if (currentUserLocation) {
-      const [userLat, userLng] = currentUserLocation;
-      minLat = Math.min(minLat, userLat);
-      maxLat = Math.max(maxLat, userLat);
-      minLng = Math.min(minLng, userLng);
-      maxLng = Math.max(maxLng, userLng);
-    }
-
-    // Add some padding to the bounds
-    const padding = 0.01;
-    minLat -= padding;
-    maxLat += padding;
-    minLng -= padding;
-    maxLng += padding;
-
-    return new (window as any).L.LatLngBounds(
-      [minLat, minLng],
-      [maxLat, maxLng]
-    );
-  }, [currentUserLocation]);
-
-  // Function to fit map to bounds
-  const fitMapToBounds = useCallback((bounds: L.LatLngBounds) => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(bounds, {
-        padding: [50, 50], // Add some padding around the bounds
-        maxZoom: 15 // Limit maximum zoom level
-      });
-    }
-  }, []);
-
-  // Function to calculate pin color based on congregation and language
-  const calculatePinColor = (congregationId: number = 1, language: string = 'english'): number => {
+  const calculatePinColor = useCallback((congregationId: number = 1, language: string = 'english'): number => {
     const defaultLanguagePinMap: { [key: string]: number } = {
       'english': 1,
       'tamil': 2,
@@ -151,10 +108,9 @@ const Map: React.FC<MapProps> = ({
     }
     
     return pinColor;
-  };
+  }, []);
 
-  // Function to get pin image
-  const getPinImage = (pin: Pin, fallbackLanguage?: string, fallbackCongId?: number) => {
+  const getPinImage = useCallback((pin: Pin, fallbackLanguage?: string, fallbackCongId?: number) => {
     if (pin.pinImage) {
       console.log(`Using pinImage from backend: ${pin.pinImage}`);
       return pin.pinImage;
@@ -174,11 +130,9 @@ const Map: React.FC<MapProps> = ({
     console.log(`Calculated pin color: ${pinColor}`);
     
     return `/pins/pin${pinColor}.png`;
-  };
+  }, [calculatePinColor, congregationId, selectedLanguage]);
 
-  // Function to normalize pin data (handle both old and new formats)
   const normalizePin = (pin: Pin): Pin => {
-    // If position is already set, use it; otherwise construct from lat/long
     const position: [number, number] = pin.position || [pin.lat || 0, pin.long || 0];
     
     return {
@@ -187,6 +141,52 @@ const Map: React.FC<MapProps> = ({
       title: pin.title || pin.address || 'Unknown Location',
     };
   };
+
+  const calculateBounds = useCallback((pins: Pin[]): L.LatLngBounds | null => {
+    if (pins.length === 0) return null;
+
+    const normalizedPins = pins.map(pin => normalizePin(pin));
+    let minLat = Number.MAX_VALUE;
+    let maxLat = Number.MIN_VALUE;
+    let minLng = Number.MAX_VALUE;
+    let maxLng = Number.MIN_VALUE;
+
+    normalizedPins.forEach(pin => {
+      const [lat, lng] = pin.position;
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    });
+
+    if (currentUserLocation) {
+      const [userLat, userLng] = currentUserLocation;
+      minLat = Math.min(minLat, userLat);
+      maxLat = Math.max(maxLat, userLat);
+      minLng = Math.min(minLng, userLng);
+      maxLng = Math.max(maxLng, userLng);
+    }
+
+    const padding = 0.01;
+    minLat -= padding;
+    maxLat += padding;
+    minLng -= padding;
+    maxLng += padding;
+
+    return new window.L.LatLngBounds(
+      [minLat, minLng],
+      [maxLat, maxLng]
+    );
+  }, [currentUserLocation]);
+
+  const fitMapToBounds = useCallback((bounds: L.LatLngBounds) => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(bounds, {
+        padding: [50, 50],
+        maxZoom: 15
+      });
+    }
+  }, []);
 
   const handlePositionChange = useCallback((position: [number, number]) => {
     onPositionChange?.(position);
@@ -203,11 +203,9 @@ const Map: React.FC<MapProps> = ({
     }
   }, [onMapMoveEnd]);
 
-  // Initialize map and user location
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Try to get user location from localStorage if not provided
     if (!currentUserLocation) {
       const savedLocation = localStorage.getItem('userLocation');
       if (savedLocation) {
@@ -264,7 +262,6 @@ const Map: React.FC<MapProps> = ({
         markerRef.current?.setLatLng(e.latlng);
       });
 
-      // Add user location marker if available
       if (currentUserLocation) {
         const userIcon = L.icon({
           iconUrl: '/pins/pin0.png',
@@ -276,7 +273,7 @@ const Map: React.FC<MapProps> = ({
         userLocationMarkerRef.current = L.marker(currentUserLocation, {
           icon: userIcon,
           title: 'Your Location',
-          zIndexOffset: 1000 // Ensure it's above other markers
+          zIndexOffset: 1000
         }).addTo(map)
           .bindPopup('Your Current Location');
       }
@@ -302,16 +299,13 @@ const Map: React.FC<MapProps> = ({
     };
   }, [center, currentMapView, handleMapDoubleClick, handlePositionChange, handleMapMoveEnd, zoom, currentUserLocation]);
 
-  // Update user location when it changes
   useEffect(() => {
     if (userLocation) {
       setCurrentUserLocation(userLocation);
-      // Save to localStorage for persistence
       localStorage.setItem('userLocation', JSON.stringify(userLocation));
     }
   }, [userLocation]);
 
-  // Fit map to bounds when pins change (if autoFitBounds is enabled)
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current || !autoFitBounds) return;
 
@@ -359,20 +353,17 @@ const Map: React.FC<MapProps> = ({
     updateTileLayer();
   }, [currentMapView]);
 
-  // Update user location marker
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
     const updateUserMarker = async () => {
       const L = await import('leaflet');
       
-      // Remove existing marker if it exists
       if (userLocationMarkerRef.current) {
         mapInstanceRef.current!.removeLayer(userLocationMarkerRef.current);
         userLocationMarkerRef.current = null;
       }
 
-      // Add new marker if we have a location
       if (currentUserLocation) {
         const userIcon = L.icon({
           iconUrl: '/pins/pin0.png',
@@ -384,7 +375,7 @@ const Map: React.FC<MapProps> = ({
         userLocationMarkerRef.current = L.marker(currentUserLocation, {
           icon: userIcon,
           title: 'Your Location',
-          zIndexOffset: 1000 // Ensure it's above other markers
+          zIndexOffset: 1000
         }).addTo(mapInstanceRef.current!)
           .bindPopup('Your Current Location');
       }
@@ -426,7 +417,7 @@ const Map: React.FC<MapProps> = ({
     };
 
     updateMarker();
-  }, [showMarker, showDraggablePin, markerPosition, center, selectedLanguage, congregationId]);
+  }, [showMarker, showDraggablePin, markerPosition, center, selectedLanguage, congregationId, getPinImage]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
@@ -493,7 +484,6 @@ const Map: React.FC<MapProps> = ({
               margin: 0;
             ">
               
-              <!-- Custom close button -->
               <button onclick="this.closest('.leaflet-popup').style.display='none'" style="
                 position: absolute;
                 top: 8px;
@@ -517,7 +507,6 @@ const Map: React.FC<MapProps> = ({
               onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'"
               onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">×</button>
               
-              <!-- Animated bubbles -->
               <div style="
                 position: absolute;
                 width: 8px;
@@ -585,7 +574,6 @@ const Map: React.FC<MapProps> = ({
                 pointer-events: none;
               "></div>
               
-              <!-- Content -->
               <div style="position: relative; z-index: 10;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
                   <div style="
@@ -604,7 +592,6 @@ const Map: React.FC<MapProps> = ({
                   ">${normalizedPin.title || 'No address'}</strong>
                 </div>
                 
-                <!-- Building Information -->
                 <div style="margin-bottom: 15px; font-size: 12px; opacity: 0.9; line-height: 1.4;">
                   ${pin.info ? `<div style="margin-bottom: 4px;">Info: ${pin.info}</div>` : ''}
                   ${pin.numberOfDoors ? `<div style="margin-bottom: 4px;">Doors: ${pin.numberOfDoors}</div>` : ''}
@@ -651,7 +638,6 @@ const Map: React.FC<MapProps> = ({
             </div>
             
             <style>
-              /* Hide default Leaflet popup styles */
               .leaflet-popup-content-wrapper {
                 background: transparent !important;
                 border-radius: 0 !important;
@@ -796,7 +782,7 @@ const Map: React.FC<MapProps> = ({
     };
 
     updatePins();
-  }, [pins, selectedLanguage, congregationId]);
+  }, [pins, selectedLanguage, congregationId, getPinImage]);
 
   const handleViewToggle = (view: 'map' | 'satellite') => {
     setCurrentMapView(view);
