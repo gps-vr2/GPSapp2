@@ -9,7 +9,6 @@ import { Plus, Save, X, Trash2, MapPin, RefreshCw } from 'lucide-react';
 
 const MapWithNoSSR = dynamic(() => import('../components/Map'), { ssr: false });
 
-
 // Unified Pin interface that will be used throughout the application
 interface Pin {
   id: number;
@@ -54,9 +53,66 @@ export default function HomePage() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([12.8923, 80.1889]);
   const [mapZoom, setMapZoom] = useState(12);
   const [showNewBuildingNotification, setShowNewBuildingNotification] = useState(false);
+  const [highlightPinId, setHighlightPinId] = useState<number | undefined>(undefined);
+  const [mapKey, setMapKey] = useState(0);
+  const [shouldAutoFit, setShouldAutoFit] = useState(true);
   
   // Ref to track if we've already processed the URL parameters
   const hasProcessedUrlParams = useRef(false);
+
+  const processUrlParameters = useCallback((pins: Pin[]) => {
+    if (hasProcessedUrlParams.current) return;
+    
+    const lat = searchParams.get('lat');
+    const lng = searchParams.get('lng');
+    const isNewBuilding = searchParams.get('newBuilding') === 'true';
+    const centerLat = searchParams.get('centerLat');
+    const centerLng = searchParams.get('centerLng');
+    const showNew = searchParams.get('showNew') === 'true';
+
+    // Check for new building parameters
+    if ((lat && lng && isNewBuilding) || (centerLat && centerLng && showNew)) {
+      const targetLat = parseFloat(lat || centerLat || '0');
+      const targetLng = parseFloat(lng || centerLng || '0');
+      
+      if (!isNaN(targetLat) && !isNaN(targetLng)) {
+        console.log('Centering map on new building:', targetLat, targetLng);
+        
+        // Disable auto-fit and set specific center/zoom
+        setShouldAutoFit(false);
+        setMapCenter([targetLat, targetLng]);
+        setMapZoom(18); // Higher zoom for better focus on the new building
+        
+        // Show notification for new building
+        if (isNewBuilding || showNew) {
+          setShowNewBuildingNotification(true);
+          setTimeout(() => {
+            setShowNewBuildingNotification(false);
+          }, 3000);
+        }
+        
+        // Try to find and highlight the new building
+        setTimeout(() => {
+          const newPin = pins.find(pin => 
+            Math.abs(pin.position[0] - targetLat) < 0.0001 && 
+            Math.abs(pin.position[1] - targetLng) < 0.0001
+          );
+          
+          if (newPin) {
+            setSelectedPin(newPin);
+            setHighlightPinId(newPin.id);
+            console.log('Found and selected new building:', newPin);
+          }
+        }, 1000);
+        
+        hasProcessedUrlParams.current = true;
+        
+        // Clean up URL parameters after processing
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [searchParams]);
 
   const fetchRecentBuildings = useCallback(async () => {
     try {
@@ -81,59 +137,7 @@ export default function HomePage() {
     } catch (err) {
       console.error("Failed to load recent buildings:", err);
     }
-  }, []);
-
-  const processUrlParameters = useCallback((pins: Pin[]) => {
-    if (hasProcessedUrlParams.current) return;
-    
-    const lat = searchParams.get('lat');
-    const lng = searchParams.get('lng');
-    const isNewBuilding = searchParams.get('newBuilding') === 'true';
-    const centerLat = searchParams.get('centerLat');
-    const centerLng = searchParams.get('centerLng');
-    const showNew = searchParams.get('showNew') === 'true';
-
-    // Check for new building parameters
-    if ((lat && lng && isNewBuilding) || (centerLat && centerLng && showNew)) {
-      const targetLat = parseFloat(lat || centerLat || '0');
-      const targetLng = parseFloat(lng || centerLng || '0');
-      
-      if (!isNaN(targetLat) && !isNaN(targetLng)) {
-        console.log('Centering map on new building:', targetLat, targetLng);
-        
-        // Set map center and zoom level
-        setMapCenter([targetLat, targetLng]);
-        setMapZoom(18); // Higher zoom for better focus on the new building
-        
-        // Show notification for new building
-        if (isNewBuilding || showNew) {
-          setShowNewBuildingNotification(true);
-          setTimeout(() => {
-            setShowNewBuildingNotification(false);
-          }, 3000);
-        }
-        
-        // Try to find and highlight the new building
-        setTimeout(() => {
-          const newPin = pins.find(pin => 
-            Math.abs(pin.position[0] - targetLat) < 0.0001 && 
-            Math.abs(pin.position[1] - targetLng) < 0.0001
-          );
-          
-          if (newPin) {
-            setSelectedPin(newPin);
-            console.log('Found and selected new building:', newPin);
-          }
-        }, 1000);
-        
-        hasProcessedUrlParams.current = true;
-        
-        // Clean up URL parameters after processing
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
-      }
-    }
-  }, [searchParams]);
+  }, [processUrlParameters]);
 
   // Type the callback explicitly to match the Pin interface
   const handlePinClick = useCallback((pin: Pin) => {
@@ -170,22 +174,40 @@ export default function HomePage() {
       });
 
       if (response.ok) {
+        // Store current map state before updating
+        const currentZoom = mapZoom;
+        
         // Update the pins array
+        const updatedPin = {
+          id: editingBuilding.id,
+          position: [editingBuilding.lat, editingBuilding.long] as [number, number],
+          title: editingBuilding.address,
+          doors: editingBuilding.doors,
+          language: editingBuilding.language,
+          info: editingBuilding.doors.join(', '),
+          numberOfDoors: editingBuilding.doors.length
+        };
+
+        // Prevent any auto-fitting during the update
+        setShouldAutoFit(false);
+        
+        // Update pins without triggering map changes
         setRecentPins(prevPins => 
           prevPins.map(pin => 
-            pin.id === editingBuilding.id 
-              ? {
-                  ...pin,
-                  position: [editingBuilding.lat, editingBuilding.long] as [number, number],
-                  title: editingBuilding.address,
-                  doors: editingBuilding.doors,
-                  language: editingBuilding.language,
-                  info: editingBuilding.doors.join(', '),
-                  numberOfDoors: editingBuilding.doors.length
-                }
-              : pin
+            pin.id === editingBuilding.id ? updatedPin : pin
           )
         );
+        
+        // Use setTimeout to ensure state updates are processed first
+        setTimeout(() => {
+          // Maintain the current view or focus on edited building
+          setMapCenter([editingBuilding.lat, editingBuilding.long]);
+          setMapZoom(Math.max(currentZoom, 16)); // Ensure decent zoom level
+          setHighlightPinId(editingBuilding.id);
+          setSelectedPin(updatedPin);
+          setMapKey(prev => prev + 1); // Force map to re-render with new props
+        }, 100);
+        
         cancelEditing();
         alert('Building updated successfully!');
       } else {
@@ -196,8 +218,6 @@ export default function HomePage() {
       alert('Error updating building');
     }
   };
-
-
 
   const updatePosition = (lat: number, long: number) => {
     if (editingBuilding) {
@@ -237,6 +257,14 @@ export default function HomePage() {
         doors: prev.doors.map((door, i) => i === index ? newValue : door)
       } : null);
     }
+  };
+
+  const handleRefresh = () => {
+    setHighlightPinId(undefined);
+    setSelectedPin(null);
+    setShouldAutoFit(true); // Re-enable auto-fit when refreshing
+    setMapKey(prev => prev + 1); // Force map refresh
+    fetchRecentBuildings();
   };
 
   useEffect(() => {
@@ -292,6 +320,7 @@ export default function HomePage() {
       {isMounted && (
         <div className="absolute top-11 bottom-11 left-0 right-0 z-0">
           <MapWithNoSSR
+            key={`map-${mapKey}-${shouldAutoFit}`}
             pins={recentPins}
             center={mapCenter}
             zoom={mapZoom}
@@ -301,6 +330,8 @@ export default function HomePage() {
             selectedPin={selectedPin}
             isEditing={isEditing}
             onPositionUpdate={updatePosition}
+            highlightPinId={highlightPinId}
+            autoFitBounds={shouldAutoFit}
           />
         </div>
       )}
@@ -315,7 +346,7 @@ export default function HomePage() {
             </span>
             <button
               className="p-2 hover:bg-purple-700 rounded-lg transition-colors"
-              onClick={fetchRecentBuildings}
+              onClick={handleRefresh}
               aria-label="Refresh Buildings"
             >
               <RefreshCw className="w-5 h-5 text-white" />

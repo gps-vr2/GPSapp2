@@ -46,6 +46,7 @@ interface MapProps {
   selectedLanguage?: string;
   congregationId?: number;
   autoFitBounds?: boolean;
+  highlightPinId?: number; // Added to zoom to a specific pin after save
 }
 
 declare global {
@@ -74,6 +75,7 @@ const Map: React.FC<MapProps> = ({
   selectedLanguage = 'english',
   congregationId = 1,
   autoFitBounds = true,
+  highlightPinId, // Added prop
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -307,13 +309,20 @@ const Map: React.FC<MapProps> = ({
   }, [userLocation]);
 
   useEffect(() => {
-    if (!mapInstanceRef.current || !isInitializedRef.current || !autoFitBounds) return;
+    if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
-    const bounds = calculateBounds(pins);
-    if (bounds) {
-      fitMapToBounds(bounds);
+    if (highlightPinId) {
+      const pin = pins.find(p => p.id === highlightPinId);
+      if (pin) {
+        mapInstanceRef.current.setView(pin.position, 15);
+      }
+    } else if (autoFitBounds) {
+      const bounds = calculateBounds(pins);
+      if (bounds) {
+        fitMapToBounds(bounds);
+      }
     }
-  }, [pins, autoFitBounds, calculateBounds, fitMapToBounds]);
+  }, [pins, autoFitBounds, highlightPinId, calculateBounds, fitMapToBounds]);
 
   useEffect(() => {
     if (mapInstanceRef.current && isInitializedRef.current) {
