@@ -23,16 +23,17 @@ model Building {
 }
 
 model Congregation {
-  idCongregation Int         @id @db.UnsignedMediumInt
-  name           String?     @db.VarChar(255)
-  language       String?     @db.VarChar(100)
-  createdAt      DateTime    @default(now()) @db.Timestamp(0)
-  updatedAt      DateTime?   @db.Timestamp(0)
-  Door           Door[]
-  Language       Language[]
-  Login          Login[]
-  Publisher      Publisher[]
-  Territory      Territory[]
+  idCongregation    Int                 @id @db.UnsignedMediumInt
+  name              String?             @db.VarChar(255)
+  language          String?             @db.VarChar(100)
+  createdAt         DateTime            @default(now()) @db.Timestamp(0)
+  updatedAt         DateTime?           @db.Timestamp(0)
+  Door              Door[]
+  GPS_VR2_STRUCTURE GPS_VR2_STRUCTURE[]
+  Language          Language[]
+  Login             Login[]
+  Publisher         Publisher[]
+  Territory         Territory[]
 }
 
 model Door {
@@ -90,17 +91,6 @@ model Territory {
   @@index([congregation_id], map: "idCongregation_idx")
 }
 
-model App1Entry {
-  id        Int       @id @default(autoincrement())
-  id_cong   Int
-  Gps       String
-  Landmark  String
-  Territory String
-  Url       String
-  createdAt DateTime  @default(now()) @db.Timestamp(0)
-  updatedAt DateTime? @db.Timestamp(0)
-}
-
 model Login {
   id                 Int          @id @default(autoincrement()) @db.UnsignedInt
   name               String       @db.VarChar(100)
@@ -117,11 +107,33 @@ model Login {
   @@index([congregationNumber], map: "Login_cong_idx")
 }
 
+model GPS_VR2_STRUCTURE {
+  id           Int           @id @default(autoincrement())
+  id_cong      Int?          @db.UnsignedMediumInt
+  Terri        String?       @db.VarChar(100)
+  group_name   String?       @map("group name") @db.VarChar(100)
+  Statut       String?       @db.VarChar(50)
+  location     String?       @db.VarChar(100)
+  Url          String?       @db.Text
+  User_name    String?       @db.VarChar(100)
+  Upload       String?       @db.VarChar(50)
+  Statut_time  DateTime?     @db.DateTime(0)
+  Congregation Congregation? @relation(fields: [id_cong], references: [idCongregation], onDelete: Cascade, map: "fk_id_cong")
+
+  @@index([id_cong], map: "fk_id_cong")
+}
+
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 view Building_v_24h {
-  lat           Float    @db.Float
-  long          Float    @db.Float
-  last_modified DateTime @default(now()) @db.Timestamp(0)
+  id             Int      @default(0) @db.UnsignedInt
+  lat            Float    @db.Float
+  long           Float    @db.Float
+  address        String?  @db.VarChar(255)
+  last_modified  DateTime @default(now()) @db.Timestamp(0)
+  numberOfDoors  BigInt   @default(0)
+  info           String?  @db.Text
+  language       String?  @db.VarChar(100)
+  congregationId Int?     @db.UnsignedMediumInt
 
   @@id([lat, long, last_modified])
   @@map("Building_v_24h")
