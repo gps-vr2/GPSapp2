@@ -28,7 +28,8 @@ const calculatePinColor = (congregationId: number = 1, language: string = 'engli
     english: 1, tamil: 2, hindi: 3, telugu: 4, malayalam: 5,
   };
 
-  let base = map[language.toLowerCase()] || 1;
+  const base = map[language.toLowerCase()] || 1;
+
 
   if (congregationId === 1) return base;
 
