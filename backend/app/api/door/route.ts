@@ -22,27 +22,39 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Helper to calculate pin color
+// Pin color helper
 const calculatePinColor = (congregationId: number = 1, language: string = 'english'): number => {
-  const map: { [key: string]: number } = {
+  const map: Record<string, number> = {
     english: 1, tamil: 2, hindi: 3, telugu: 4, malayalam: 5,
   };
-
   const base = map[language.toLowerCase()] || 1;
-
-
   if (congregationId === 1) return base;
-
   const pin = ((congregationId - 1) * 5) + base;
   return Math.min(pin, 15);
 };
 
-// Handle GET - fetch view data from Building_v_24h
+// BigInt-safe serializer
+function serializeBigInts<T>(obj: T): T {
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInts) as T;
+  } else if (obj && typeof obj === 'object' && obj !== null) {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([key, value]) => {
+        if (typeof value === 'bigint') return [key, Number(value)];
+        return [key, serializeBigInts(value)];
+      })
+    ) as T;
+  }
+  return obj;
+}
+
+// GET - read from 24H view
 export async function GET(): Promise<NextResponse> {
   try {
     const buildings = await prisma.building_v_24h.findMany();
+    const safeData = serializeBigInts(buildings);
 
-    return new NextResponse(JSON.stringify(buildings), {
+    return new NextResponse(JSON.stringify(safeData), {
       status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -63,12 +75,12 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
-// Handle POST - create building + doors
+// POST - create building and doors
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.text();
     if (!body) {
-      return new NextResponse(JSON.stringify({ error: 'Empty body' }), {
+      return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
         status: 400,
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -84,7 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
-      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
+      return new NextResponse(JSON.stringify({ error: 'Invalid coordinates' }), {
         status: 400,
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -93,7 +105,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // Step 1: Create building
     const building = await prisma.building.create({
       data: {
         lat,
@@ -104,19 +115,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
     });
 
-    // Step 2: Create doors
     const doorInfoArray = info.split(',').map(i => i.trim());
     const doors: DoorData[] = Array.from({ length: Math.max(numberOfDoors, doorInfoArray.length) }).map((_, i) => ({
       language,
       information_name: doorInfoArray[i] || undefined,
       building_id: building.idBuilding,
       id_cong_app: congregationId,
-      id_cong_lang: 1, // optional: map language to ID if required
+      id_cong_lang: 1,
     }));
 
     await prisma.door.createMany({ data: doors });
 
-    // Step 3: Respond
     const pinColor = calculatePinColor(congregationId, language);
     const pinImage = `/pins/pin${pinColor}.png`;
 
@@ -124,11 +133,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       message: 'Building created successfully',
       building: {
         id: building.idBuilding,
-        lat, long, address, numberOfDoors,
-        language, congregationId,
+        lat, long, address,
+        numberOfDoors,
+        language,
+        congregationId,
         pinColor,
         pinImage,
-        info
+        info,
       },
     }), {
       status: 201,
