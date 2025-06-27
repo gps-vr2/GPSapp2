@@ -22,14 +22,14 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Fix for BigInt serialization
+// Helper to stringify BigInt
 function safeStringify(obj: unknown): string {
   return JSON.stringify(obj, (_, value) =>
     typeof value === 'bigint' ? value.toString() : value
   );
 }
 
-// GET: Fetch from 24h view
+// GET: Fetch from view
 export async function GET(): Promise<NextResponse> {
   try {
     const buildings = await prisma.building_v_24h.findMany();
@@ -54,7 +54,7 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
-// POST: Add building + doors
+// POST: Create building + doors
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.text();
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
-      return new NextResponse(JSON.stringify({ error: 'Invalid lat/long' }), {
+      return new NextResponse(JSON.stringify({ error: 'Invalid coordinates' }), {
         status: 400,
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -90,7 +90,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // 1. Create building
     const building = await prisma.building.create({
       data: {
         lat,
@@ -101,7 +100,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
     });
 
-    // 2. Create doors
     const doorInfoArray = info.split(',').map((i) => i.trim());
     const doors: DoorData[] = Array.from({ length: Math.max(numberOfDoors, doorInfoArray.length) }).map(
       (_, i) => ({
@@ -109,14 +107,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         information_name: doorInfoArray[i] || undefined,
         building_id: building.idBuilding,
         id_cong_app: congregationId,
-        id_cong_lang: 1, // Optional: update if mapping required
+        id_cong_lang: 1,
       })
     );
 
     await prisma.door.createMany({ data: doors });
 
     return new NextResponse(
-      JSON.stringify({ message: 'Building and doors created successfully' }),
+      JSON.stringify({
+        message: 'Building and doors created successfully',
+        buildingId: building.idBuilding,
+      }),
       {
         status: 201,
         headers: {

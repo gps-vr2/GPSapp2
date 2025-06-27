@@ -134,6 +134,8 @@ view Building_v_24h {
   info           String?  @db.Text
   language       String?  @db.VarChar(100)
   congregationId Int?     @db.UnsignedMediumInt
+  pinColor       Int?     @db.UnsignedTinyInt
+  pinImage       String?  @db.VarChar(16)
 
   @@id([lat, long, last_modified])
   @@map("Building_v_24h")
