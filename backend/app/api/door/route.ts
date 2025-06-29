@@ -8,10 +8,9 @@ interface RequestData {
   long: number;
   language?: string;
   numberOfDoors?: number;
-  addressInfo?: string[];
-  buildingAddress?: string;
+  info?: string;
+  address?: string; 
   territory_id?: number;
-  congregationId?: number;
 }
 
 interface DoorData {
@@ -22,122 +21,135 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Helper to stringify BigInt
-function safeStringify(obj: unknown): string {
-  return JSON.stringify(obj, (_, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  );
-}
-
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-// Handle preflight OPTIONS request
+// Handle OPTIONS preflight requests (for CORS)
 export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, {
-    status: 200,
-    headers: corsHeaders,
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
   });
 }
 
-// GET: Fetch from view with language filtering
+// Handle GET requests - fetch from building view
 export async function GET(): Promise<NextResponse> {
   try {
-    const buildings = await prisma.building_v_24h.findMany({
+    // Fetch from building view instead of direct table join
+    const buildingsFromView = await prisma.building_v_24h.findMany({
       where: {
         language: {
-          not: null // Only get buildings where language is not null
+          not: null
         }
       }
     });
-    return new NextResponse(safeStringify(buildings), {
+
+    // Transform the view data to match your desired format
+    const buildingsData = buildingsFromView.map(building => ({
+      id: building.id,
+      lat: building.lat,
+      long: building.long,
+      address: building.address,
+      numberOfDoors: Number(building.numberOfDoors) || 0,
+      language: building.language || 'English',
+      info: building.info || undefined,
+    }));
+
+    return new NextResponse(JSON.stringify(buildingsData), {
       status: 200,
-      headers: corsHeaders,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('GET Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
-      headers: corsHeaders,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
     });
   } finally {
     await prisma.$disconnect();
   }
 }
 
-// POST: Create building + doors
+// Handle POST requests - create new building
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = await request.text();
-    if (!body) {
-      return new NextResponse(JSON.stringify({ error: 'Empty body' }), {
+    const bodyText = await request.text();
+
+    if (!bodyText) {
+      return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
         status: 400,
-        headers: corsHeaders,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
       });
     }
 
-    const data: RequestData = JSON.parse(body);
-    const {
-      lat,
-      long,
-      language = 'english',
-      numberOfDoors = 1,
-      addressInfo = [],
-      buildingAddress = '',
-      territory_id = 1,
-      congregationId = 1,
-    } = data;
+    const data: RequestData = JSON.parse(bodyText) as RequestData;
+    console.log("Received create data:", data);
+
+    const { lat, long, language, numberOfDoors, info, address, territory_id } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
-      return new NextResponse(JSON.stringify({ error: 'Invalid coordinates' }), {
+      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
         status: 400,
-        headers: corsHeaders,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
       });
     }
 
-    const building = await prisma.building.create({
+    // Create the building
+    const newBuilding = await prisma.building.create({
       data: {
         lat,
         long,
-        address: buildingAddress,
-        territory_id,
+        address: address || null,
+        territory_id: territory_id || 1, // Default territory_id if not provided
         last_modified: new Date(),
       },
     });
 
-    // Create doors based on addressInfo array
-    const doors: DoorData[] = addressInfo.slice(0, numberOfDoors).map((doorAddress) => ({
-      language,
-      information_name: doorAddress || undefined,
-      building_id: building.idBuilding,
-      id_cong_app: congregationId,
+    // Create doors for the building
+    const doorInfoArray = info ? info.split(', ') : [''];
+    const doorsToCreate = Math.max(numberOfDoors || 1, doorInfoArray.length);
+    
+    const doors: DoorData[] = Array.from({ length: doorsToCreate }).map((_, index) => ({
+      language: language ?? 'English',
+      information_name: doorInfoArray[index] || undefined,
+      building_id: newBuilding.idBuilding,
+      id_cong_app: 1,
       id_cong_lang: 1,
     }));
 
-    if (doors.length > 0) {
-      await prisma.door.createMany({ data: doors });
-    }
+    await prisma.door.createMany({ data: doors });
 
-    return new NextResponse(
-      JSON.stringify({
-        message: 'Building and doors created successfully',
-        buildingId: building.idBuilding,
-      }),
-      {
-        status: 201,
-        headers: corsHeaders,
-      }
-    );
-  } catch (error) {
+    return new NextResponse(JSON.stringify({ 
+      message: 'Building created successfully',
+      building: newBuilding 
+    }), {
+      status: 201,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (error: unknown) {
     console.error('POST Error:', error);
     return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,
-      headers: corsHeaders,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
     });
   } finally {
     await prisma.$disconnect();
