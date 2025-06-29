@@ -169,7 +169,7 @@ const BuildingEditContent: React.FC = () => {
       const numberOfDoorsFromAPI = typeof data.numberOfDoors === 'number' ? data.numberOfDoors : (infoArray.length > 0 ? infoArray.length : 1);
 
       const initialFormData = {
-        gps: `${(position ? position[0] : numLat).toFixed(6)}, ${(position ? position[1] : numLong).toFixed(6)}`, // Use the set position or numLat/numLong
+        gps: `${numLat.toFixed(6)}, ${numLong.toFixed(6)}`,
         language: data.language || 'English',
         numberOfDoors: numberOfDoorsFromAPI,
         addressInfo: infoArray.length > 0 ? infoArray : Array(numberOfDoorsFromAPI).fill(''),
@@ -197,7 +197,7 @@ const BuildingEditContent: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [buildingId, position]); // Added 'position' to the dependency array
+  }, [buildingId]);
 
   useEffect(() => {
     if (buildingId) {
@@ -441,10 +441,10 @@ const BuildingEditContent: React.FC = () => {
           numberOfDoors: newDoorCount,
           addressInfo: updatedAddresses
         };
-      } else { 
+      } else { // This will now handle 'gps' as well, ensuring it remains a string.
         return {
           ...prev,
-          [field]: value as string // Ensure the value is treated as a string for other fields
+          [field]: value
         };
       }
     });
@@ -592,7 +592,7 @@ const BuildingEditContent: React.FC = () => {
             isLoading={isLoading}
             onMapMoveEnd={handleMapMoveEnd}
             isEditMode={true}
-            buildingId={buildingId ? parseInt(buildingId) : undefined}
+            buildingId={buildingId ? parseInt(buildingId) : undefined} // Pass buildingId here
             // Pass original data for territoryId and congregationId if needed by BuildingForm
             territoryId={originalData?.territory_id}
             congregationId={originalData?.congregationId}

@@ -27,7 +27,6 @@ interface BuildingFormProps {
   selectedLanguage?: string;
   congregationId?: number;
   territoryId?: number;
-  
 }
 
 const BuildingForm: React.FC<BuildingFormProps> = ({
