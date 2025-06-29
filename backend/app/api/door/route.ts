@@ -45,10 +45,16 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-// GET: Fetch from view
+// GET: Fetch from view with language filtering
 export async function GET(): Promise<NextResponse> {
   try {
-    const buildings = await prisma.building_v_24h.findMany();
+    const buildings = await prisma.building_v_24h.findMany({
+      where: {
+        language: {
+          not: null // Only get buildings where language is not null
+        }
+      }
+    });
     return new NextResponse(safeStringify(buildings), {
       status: 200,
       headers: corsHeaders,
