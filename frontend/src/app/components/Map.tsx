@@ -14,8 +14,8 @@ interface Pin {
   lat?: number;
   long?: number;
   address?: string;
-  pinImage?: string;
-  pinColor?: number;
+  pinImage?: string; // This is the field from the backend, e.g., "/pins/pin4.png"
+  pinColor?: number; // This is the field from the backend, e.g., 4
   congregationId?: number;
 }
 
@@ -49,18 +49,24 @@ interface MapProps {
   highlightPinId?: number; // Added to zoom to a specific pin after save
 }
 
+// Declare Leaflet global type for window.L if not already done in a global.d.ts file
 declare global {
   interface Window {
     L: {
       LatLngBounds: new (southWest: [number, number], northEast: [number, number]) => L.LatLngBounds;
-      // Add other Leaflet types as needed
+      map: (element: HTMLElement | string, options?: L.MapOptions) => L.Map;
+      tileLayer: (urlTemplate: string, options?: L.TileLayerOptions) => L.TileLayer;
+      marker: (latlng: L.LatLngExpression, options?: L.MarkerOptions) => L.Marker;
+      icon: (options: L.IconOptions) => L.Icon;
+      // Add other Leaflet types as needed for a complete typing
     };
   }
 }
 
+
 const Map: React.FC<MapProps> = ({
   center,
-  pins = [],
+  pins = [], // Default to an empty array to prevent undefined issues
   zoom,
   showMarker = false,
   showDraggablePin = false,
@@ -87,7 +93,9 @@ const Map: React.FC<MapProps> = ({
   const [currentMapView, setCurrentMapView] = useState<'map' | 'satellite'>(mapView);
   const [currentUserLocation, setCurrentUserLocation] = useState<[number, number] | null>(userLocation || null);
 
+  // Helper function to calculate pin color based on congregation and language
   const calculatePinColor = useCallback((congregationId: number = 1, language: string = 'english'): number => {
+    // This is the fallback logic, which will ONLY be used if pin.pinImage and pin.pinColor are NOT provided by backend
     const defaultLanguagePinMap: { [key: string]: number } = {
       'english': 1,
       'tamil': 2,
@@ -96,54 +104,65 @@ const Map: React.FC<MapProps> = ({
       'malayalam': 5,
     };
     
-    let pinColor = 1;
+    let pinColor = 1; // Default pin color
     
     if (congregationId === 1) {
+      // For congregation ID 1, use direct language mapping
       pinColor = defaultLanguagePinMap[language.toLowerCase()] || 1;
     } else {
+      // For other congregation IDs, calculate based on offset
       const languageOffset = defaultLanguagePinMap[language.toLowerCase()] || 1;
       pinColor = ((congregationId - 1) * 5) + languageOffset;
       
+      // Ensure pinColor stays within a reasonable range if you only have 15 pins
+      // Adjust this logic if you have more than 15 unique pins for calculated colors
       if (pinColor > 15) {
-        pinColor = ((pinColor - 1) % 15) + 1;
+        pinColor = ((pinColor - 1) % 15) + 1; 
       }
     }
     
     return pinColor;
   }, []);
 
+  // Determines the correct pin image URL based on priority
   const getPinImage = useCallback((pin: Pin, fallbackLanguage?: string, fallbackCongId?: number) => {
-    if (pin.pinImage) {
-      console.log(`Using pinImage from backend: ${pin.pinImage}`);
+    // Priority 1: Use pinImage directly from the backend if it's provided and not empty
+    if (pin.pinImage && pin.pinImage !== "") {
+      console.log(`[getPinImage] Priority 1: Using pinImage from backend for pin ${pin.id || 'N/A'}: ${pin.pinImage}`);
       return pin.pinImage;
     }
     
-    if (pin.pinColor) {
-      console.log(`Using pinColor from backend: ${pin.pinColor}`);
+    // Priority 2: Use pinColor from the backend if it's provided and valid
+    if (pin.pinColor && pin.pinColor > 0) {
+      console.log(`[getPinImage] Priority 2: Using pinColor from backend for pin ${pin.id || 'N/A'}: ${pin.pinColor}. Path: /pins/pin${pin.pinColor}.png`);
       return `/pins/pin${pin.pinColor}.png`;
     }
     
+    // Fallback: Calculate based on current selected language and congregation ID
     const language = pin.language || fallbackLanguage || selectedLanguage || 'english';
     const congId = pin.congregationId || fallbackCongId || congregationId || 1;
     
-    console.log(`Calculating pin color for language: ${language}, congregation: ${congId}`);
+    console.log(`[getPinImage] Fallback: Calculating pin color for pin ${pin.id || 'N/A'} with language: ${language}, congregation: ${congId}`);
     
     const pinColor = calculatePinColor(congId, language);
-    console.log(`Calculated pin color: ${pinColor}`);
+    console.log(`[getPinImage] Fallback: Calculated pin color for pin ${pin.id || 'N/A'}: ${pinColor}. Path: /pins/pin${pinColor}.png`);
     
     return `/pins/pin${pinColor}.png`;
   }, [calculatePinColor, congregationId, selectedLanguage]);
 
+  // Normalizes pin data to ensure position and title are always present
   const normalizePin = (pin: Pin): Pin => {
+    // Ensure position is always an array of [lat, long]
     const position: [number, number] = pin.position || [pin.lat || 0, pin.long || 0];
     
     return {
       ...pin,
       position,
-      title: pin.title || pin.address || 'Unknown Location',
+      title: pin.title || pin.address || 'Unknown Location', // Use address as fallback for title
     };
   };
 
+  // Calculates map bounds based on pins and user location
   const calculateBounds = useCallback((pins: Pin[]): L.LatLngBounds | null => {
     if (pins.length === 0) return null;
 
@@ -169,7 +188,7 @@ const Map: React.FC<MapProps> = ({
       maxLng = Math.max(maxLng, userLng);
     }
 
-    const padding = 0.01;
+    const padding = 0.01; // Small padding to ensure pins aren't on the edge
     minLat -= padding;
     maxLat += padding;
     minLng -= padding;
@@ -181,23 +200,27 @@ const Map: React.FC<MapProps> = ({
     );
   }, [currentUserLocation]);
 
+  // Fits the map to the calculated bounds
   const fitMapToBounds = useCallback((bounds: L.LatLngBounds) => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.fitBounds(bounds, {
-        padding: [50, 50],
-        maxZoom: 15
+        padding: [50, 50], // Padding around the bounds
+        maxZoom: 15 // Don't zoom in too much
       });
     }
   }, []);
 
+  // Callback for position change
   const handlePositionChange = useCallback((position: [number, number]) => {
     onPositionChange?.(position);
   }, [onPositionChange]);
 
+  // Callback for map double click
   const handleMapDoubleClick = useCallback((position: [number, number]) => {
     onMapDoubleClick?.(position);
   }, [onMapDoubleClick]);
 
+  // Callback for map move end (useful for fetching data for current view)
   const handleMapMoveEnd = useCallback(() => {
     if (mapInstanceRef.current && onMapMoveEnd) {
       const center = mapInstanceRef.current.getCenter();
@@ -205,9 +228,11 @@ const Map: React.FC<MapProps> = ({
     }
   }, [onMapMoveEnd]);
 
+  // Main effect for map initialization and cleanup
   useEffect(() => {
     if (!mapRef.current) return;
 
+    // Load user location from localStorage if not provided via props
     if (!currentUserLocation) {
       const savedLocation = localStorage.getItem('userLocation');
       if (savedLocation) {
@@ -215,23 +240,32 @@ const Map: React.FC<MapProps> = ({
           const location = JSON.parse(savedLocation) as [number, number];
           setCurrentUserLocation(location);
         } catch (e) {
-          console.error('Failed to parse saved location', e);
+          console.error('Failed to parse saved location from localStorage', e);
         }
       }
     }
 
-    if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
-      delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
-    }
-    
     const initializeMap = async () => {
+      // CRITICAL FIX: Only initialize if mapInstanceRef.current is null
+      // This prevents the "Map container is already initialized" error
+      if (mapInstanceRef.current) {
+        console.warn('Map already initialized, skipping re-initialization.');
+        return; 
+      }
+
+      // Workaround for Leaflet's _leaflet_id issue with React StrictMode
+      if ((mapRef.current as LeafletHTMLElement)._leaflet_id) {
+        delete (mapRef.current as LeafletHTMLElement)._leaflet_id;
+      }
+      
       const L = await import('leaflet');
+      // Initialize map instance
       const map = L.map(mapRef.current!, {
         minZoom: 1,
         maxZoom: 20,
-        zoomControl: false,
+        zoomControl: false, // Control is custom
         scrollWheelZoom: true,
-        doubleClickZoom: false,
+        doubleClickZoom: false, // Custom double click behavior
         touchZoom: true,
         dragging: true,
         zoomSnap: 1,
@@ -240,6 +274,7 @@ const Map: React.FC<MapProps> = ({
       mapInstanceRef.current = map;
       isInitializedRef.current = true;
 
+      // Function to get appropriate tile layer based on view mode
       const getTileLayer = (view: string) =>
         view === 'satellite'
           ? L.tileLayer(
@@ -255,18 +290,19 @@ const Map: React.FC<MapProps> = ({
       tileLayerRef.current = getTileLayer(currentMapView);
       tileLayerRef.current.addTo(map);
 
+      // Attach event listeners
       map.on('moveend', handleMapMoveEnd);
-
       map.on('dblclick', (e) => {
         const pos: [number, number] = [e.latlng.lat, e.latlng.lng];
         handleMapDoubleClick(pos);
         handlePositionChange(pos);
-        markerRef.current?.setLatLng(e.latlng);
+        markerRef.current?.setLatLng(e.latlng); // Update draggable marker position on double click
       });
 
+      // Add user location marker if available
       if (currentUserLocation) {
         const userIcon = L.icon({
-          iconUrl: '/pins/pin0.png',
+          iconUrl: '/pins/pin0.png', // Assuming pin0.png is for user location
           iconSize: [48, 55],
           iconAnchor: [24, 48],
           popupAnchor: [0, -24],
@@ -275,11 +311,12 @@ const Map: React.FC<MapProps> = ({
         userLocationMarkerRef.current = L.marker(currentUserLocation, {
           icon: userIcon,
           title: 'Your Location',
-          zIndexOffset: 1000
+          zIndexOffset: 1000 // Ensure user marker is above others
         }).addTo(map)
           .bindPopup('Your Current Location');
       }
 
+      // Invalidate map size to ensure it renders correctly after component mount
       setTimeout(() => {
         map.invalidateSize();
       }, 100);
@@ -287,10 +324,11 @@ const Map: React.FC<MapProps> = ({
 
     initializeMap();
 
+    // Cleanup function for Leaflet map instance
     return () => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.off();
-        mapInstanceRef.current.remove();
+        mapInstanceRef.current.off(); // Remove all event listeners
+        mapInstanceRef.current.remove(); // Remove map from DOM
         mapInstanceRef.current = null;
         markerRef.current = null;
         tileLayerRef.current = null;
@@ -301,6 +339,7 @@ const Map: React.FC<MapProps> = ({
     };
   }, [center, currentMapView, handleMapDoubleClick, handlePositionChange, handleMapMoveEnd, zoom, currentUserLocation]);
 
+  // Effect to update user location and save to localStorage
   useEffect(() => {
     if (userLocation) {
       setCurrentUserLocation(userLocation);
@@ -308,13 +347,14 @@ const Map: React.FC<MapProps> = ({
     }
   }, [userLocation]);
 
+  // Effect to fit map bounds or highlight a specific pin
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
     if (highlightPinId) {
-      const pin = pins.find(p => p.id === highlightPinId);
-      if (pin) {
-        mapInstanceRef.current.setView(pin.position, 15);
+      const pinToHighlight = pins.find(p => p.id === highlightPinId);
+      if (pinToHighlight) {
+        mapInstanceRef.current.setView(pinToHighlight.position, 15); // Zoom to highlighted pin
       }
     } else if (autoFitBounds) {
       const bounds = calculateBounds(pins);
@@ -324,10 +364,12 @@ const Map: React.FC<MapProps> = ({
     }
   }, [pins, autoFitBounds, highlightPinId, calculateBounds, fitMapToBounds]);
 
+  // Effect to update map view (center and zoom)
   useEffect(() => {
     if (mapInstanceRef.current && isInitializedRef.current) {
       const currentCenter = mapInstanceRef.current.getCenter();
       const currentZoom = mapInstanceRef.current.getZoom();
+      // Only update if current view is significantly different from props
       if (
         Math.abs(currentCenter.lat - center[0]) > 0.00001 ||
         Math.abs(currentCenter.lng - center[1]) > 0.00001 ||
@@ -338,13 +380,15 @@ const Map: React.FC<MapProps> = ({
     }
   }, [center, zoom]);
 
+  // Effect to switch tile layers (map vs. satellite)
   useEffect(() => {
     if (!mapInstanceRef.current || !tileLayerRef.current || !isInitializedRef.current) return;
 
     const updateTileLayer = async () => {
       const L = await import('leaflet');
-      mapInstanceRef.current!.removeLayer(tileLayerRef.current!);
+      mapInstanceRef.current!.removeLayer(tileLayerRef.current!); // Remove current layer
 
+      // Re-create tile layer based on currentMapView state
       tileLayerRef.current = currentMapView === 'satellite'
         ? L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -356,12 +400,13 @@ const Map: React.FC<MapProps> = ({
             maxZoom: 20,
           });
 
-      tileLayerRef.current.addTo(mapInstanceRef.current!);
+      tileLayerRef.current.addTo(mapInstanceRef.current!); // Add new layer
     };
 
     updateTileLayer();
   }, [currentMapView]);
 
+  // Effect to update user location marker
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
@@ -393,6 +438,7 @@ const Map: React.FC<MapProps> = ({
     updateUserMarker();
   }, [currentUserLocation]);
 
+  // Effect for the single draggable marker
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
@@ -406,7 +452,9 @@ const Map: React.FC<MapProps> = ({
 
       if (showMarker || showDraggablePin) {
         const pos = markerPosition || center;
-        const pinImageUrl = getPinImage({} as Pin, selectedLanguage, congregationId);
+        // For the single marker, we pass an empty Pin object, letting getPinImage
+        // use the fallback selectedLanguage and congregationId props.
+        const pinImageUrl = getPinImage({} as Pin, selectedLanguage, congregationId); 
 
         const icon = L.icon({
           iconUrl: pinImageUrl,
@@ -420,7 +468,7 @@ const Map: React.FC<MapProps> = ({
         
         markerRef.current = L.marker(pos, {
           icon,
-          draggable: false,
+          draggable: false, // Ensure this marker is not draggable unless explicitly needed
         }).addTo(mapInstanceRef.current!);
       }
     };
@@ -428,33 +476,37 @@ const Map: React.FC<MapProps> = ({
     updateMarker();
   }, [showMarker, showDraggablePin, markerPosition, center, selectedLanguage, congregationId, getPinImage]);
 
+  // Effect to update and display multiple pins
   useEffect(() => {
     if (!mapInstanceRef.current || !isInitializedRef.current) return;
 
     const updatePins = async () => {
       const L = await import('leaflet');
 
+      // Clear existing pin markers
       pinMarkersRef.current.forEach(marker => {
         mapInstanceRef.current!.removeLayer(marker);
       });
       pinMarkersRef.current = [];
 
+      // --- CRITICAL DEBUGGING LOG ---
+      console.log("[Map.tsx DEBUG] Pins array received:", JSON.stringify(pins, null, 2));
+      // --- END CRITICAL DEBUGGING LOG ---
+      
       pins.forEach(pin => {
         const normalizedPin = normalizePin(pin);
-        const pinImageUrl = getPinImage(pin);
-        
-        console.log(`Pin ${pin.id}:`, {
-          language: pin.language,
-          congregationId: pin.congregationId,
-          pinColor: pin.pinColor,
-          pinImage: pin.pinImage,
-          calculatedImage: pinImageUrl
-        });
+        const pinImageUrl = getPinImage(pin); // This will correctly prioritize pin.pinImage
+
+        console.log(`[Map.tsx DEBUG] Processing Pin ID ${pin.id}:`);
+        console.log(`  - Original pin object:`, pin);
+        console.log(`  - Backend pinImage (raw): ${pin.pinImage}`);
+        console.log(`  - Backend pinColor (raw): ${pin.pinColor}`);
+        console.log(`  - Determined pin image URL: ${pinImageUrl}`);
         
         const pinMarker = L.marker(normalizedPin.position, {
           title: normalizedPin.title,
           icon: L.icon({
-            iconUrl: pinImageUrl,
+            iconUrl: pinImageUrl, // Use the determined image URL
             iconSize: [48, 48],
             iconAnchor: [24, 48],
             popupAnchor: [0, -48],
@@ -606,7 +658,6 @@ const Map: React.FC<MapProps> = ({
                   ${pin.numberOfDoors ? `<div style="margin-bottom: 4px;">Doors: ${pin.numberOfDoors}</div>` : ''}
                   ${pin.congregationId ? `<div style="margin-bottom: 4px;">Congregation: ${pin.congregationId}</div>` : ''}
                   ${pin.language ? `<div style="margin-bottom: 4px;">Language: ${pin.language}</div>` : ''}
-                  ${pin.pinColor ? `<div style="margin-bottom: 4px;">Pin Color: ${pin.pinColor}</div>` : ''}
                 </div>
                 
                 <a href="/building/edit?id=${pin.id}"
@@ -638,7 +689,7 @@ const Map: React.FC<MapProps> = ({
                   onmouseout="
                     this.style.background='linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.1) 100%)';
                     this.style.transform='translateY(0)';
-                    this.style.boxShadow='0 4px 15px rgba(0, 0, 0, 0.2)';
+                    this.style.box-shadow='0 4px 15px rgba(0, 0, 0, 0.2)';
                   "
                 >
                   ✏️ Edit
@@ -793,6 +844,7 @@ const Map: React.FC<MapProps> = ({
     updatePins();
   }, [pins, selectedLanguage, congregationId, getPinImage]);
 
+  // Handle map view toggle (map vs. satellite)
   const handleViewToggle = (view: 'map' | 'satellite') => {
     setCurrentMapView(view);
   };

@@ -30,6 +30,8 @@ interface BuildingData {
   numberOfDoors?: number;
   info?: string;
   address?: string;
+  territory_id?: number;
+  congregationId?: number;
   // Add other possible fields that might come from API
   _id?: string;
   buildingId?: string;
@@ -38,7 +40,7 @@ interface BuildingData {
 const BuildingEditContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const buildingId = searchParams.get('id');
+  const buildingId = searchParams.get('id'); // This is the building ID from the URL
 
   const [position, setPosition] = useState<[number, number] | null>(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
@@ -74,7 +76,7 @@ const BuildingEditContent: React.FC = () => {
         `https://gp-sapp2-8ycr.vercel.app/api/buildings/${buildingId}`,
         `https://gp-sapp2-8ycr.vercel.app/api/door?id=${buildingId}`,
         `https://gp-sapp2-8ycr.vercel.app/api/buildings?id=${buildingId}`,
-        `https://gp-sapp2-8ycr.vercel.app/api/buildings`, // Get all buildings and filter
+        `https://gp-sapp2-8ycr.vercel.app/api/door`, // Get all buildings and filter
       ];
 
       let data: BuildingData | null = null;
@@ -93,39 +95,43 @@ const BuildingEditContent: React.FC = () => {
           if (response.ok) {
             const responseData = await response.json();
             
-            // Handle different API response formats
-            if (responseData.buildings && Array.isArray(responseData.buildings)) {
-              // Find the specific building by ID
+            // Handle different API response formats:
+            // 1. Array of buildings (e.g., from /api/door which returns all)
+            if (Array.isArray(responseData)) {
+              data = responseData.find((building:BuildingData) => 
+                String(building.id) === String(buildingId) || 
+                String(building._id) === String(buildingId) ||
+                String(building.buildingId) === String(buildingId)
+              );
+            } 
+            // 2. Object with a 'buildings' array
+            else if (responseData.buildings && Array.isArray(responseData.buildings)) {
               data = responseData.buildings.find((building:BuildingData) => 
                 String(building.id) === String(buildingId) || 
                 String(building._id) === String(buildingId) ||
                 String(building.buildingId) === String(buildingId)
               );
-              
-              if (!data && responseData.buildings.length > 0) {
-                console.warn(`Building with ID ${buildingId} not found. Available buildings:`, 
-                  responseData.buildings.map((b: BuildingData) => ({ id: b.id, _id: b._id, buildingId: b.buildingId }))
-                );
-                // Don't use fallback, let user know the specific building wasn't found
-              }
-            } else if (responseData.id || responseData._id) {
-              // Direct building object
-              data = responseData;
-            } else {
-              // Unknown format, try to use as-is
+            } 
+            // 3. Direct building object
+            else if (responseData.id || responseData._id || responseData.buildingId) {
               data = responseData;
             }
             
-            if (data) break;
+            if (data) break; // Found data, break the loop
+          } else {
+            const errorText = await response.text();
+            lastError = new Error(`API error from ${endpoint}: ${response.status} - ${errorText}`);
+            console.warn(lastError.message);
           }
         } catch (error) {
           lastError = error as Error;
+          console.error(`Fetch error for ${endpoint}:`, error);
           continue;
         }
       }
 
       if (!data) {
-        throw lastError || new Error('Building not found or failed to load building data from all endpoints');
+        throw lastError || new Error(`Building with ID ${buildingId} not found or failed to load building data from any endpoint.`);
       }
 
       // Debug log the entire response and extracted building
@@ -135,82 +141,63 @@ const BuildingEditContent: React.FC = () => {
       let lat: number | undefined = data.lat || data.latitude || data.Lat || data.Latitude;
       let long: number | undefined = data.long || data.lng || data.longitude || data.Long || data.Lng || data.Longitude;
       
-      // Comprehensive coordinate validation
-      console.log('Extracted coordinates:', { lat, long, type_lat: typeof lat, type_long: typeof long });
-      
-      // Check if coordinates exist and are not null/undefined
-      if (lat === null || lat === undefined || long === null || long === undefined) {
-        // Try to find coordinates in nested objects
-        if (data.coordinates) {
-          lat = data.coordinates.lat || data.coordinates.latitude || data.coordinates.lng;
-          long = data.coordinates.long || data.coordinates.lng || data.coordinates.longitude;
-        }
-        
-        if (lat === null || lat === undefined || long === null || long === undefined) {
-          // Set default coordinates (Chennai, India as an example - change as needed)
-          console.warn('No coordinates found, using default location');
-          lat = 13.0827; // Chennai latitude
-          long = 80.2707; // Chennai longitude
-        }
+      // Try to find coordinates in nested objects if not found directly
+      if ((lat === null || lat === undefined || isNaN(Number(lat))) && data.coordinates) {
+        lat = data.coordinates.lat || data.coordinates.latitude || data.coordinates.lng;
+      }
+      if ((long === null || long === undefined || isNaN(Number(long))) && data.coordinates) {
+        long = data.coordinates.long || data.coordinates.lng || data.coordinates.longitude;
       }
       
       // Convert to numbers and validate
       const numLat = Number(lat);
       const numLong = Number(long);
       
-      if (isNaN(numLat) || isNaN(numLong)) {
-        throw new Error(`Invalid coordinate format from API: lat="${lat}" (${typeof lat}), long="${long}" (${typeof long})`);
-      }
-      
-      // Validate coordinate ranges
-      if (numLat < -90 || numLat > 90) {
-        throw new Error(`Latitude out of valid range (-90 to 90): ${numLat}`);
-      }
-      
-      if (numLong < -180 || numLong > 180) {
-        throw new Error(`Longitude out of valid range (-180 to 180): ${numLong}`);
+      if (isNaN(numLat) || isNaN(numLong) || numLat < -90 || numLat > 90 || numLong < -180 || numLong > 180) {
+        // Set default coordinates if invalid or not found (e.g., Chennai, India)
+        console.warn('Invalid or missing coordinates, using default location: Chennai, India');
+        const defaultLat = 13.0827; 
+        const defaultLong = 80.2707;
+        setPosition([defaultLat, defaultLong]);
+        setFormData(prev => ({ ...prev, gps: `${defaultLat.toFixed(6)}, ${defaultLong.toFixed(6)}` }));
+        // Still proceed with other data if coordinates are default, but log a warning.
+      } else {
+        setPosition([numLat, numLong]);
       }
 
-      // Create a properly typed building data object
-      const buildingData: BuildingData = {
-        ...data,
-        lat: numLat,
-        long: numLong
-      };
+      const infoArray = data.info ? data.info.split(',').map(item => item.trim()).filter(item => item !== '') : [''];
+      const numberOfDoorsFromAPI = typeof data.numberOfDoors === 'number' ? data.numberOfDoors : (infoArray.length > 0 ? infoArray.length : 1);
 
-      setOriginalData(buildingData);
-      
-      const formDataFromAPI = {
-        gps: `${numLat}, ${numLong}`,
+      const initialFormData = {
+        gps: `${(position ? position[0] : numLat).toFixed(6)}, ${(position ? position[1] : numLong).toFixed(6)}`, // Use the set position or numLat/numLong
         language: data.language || 'English',
-        numberOfDoors: data.numberOfDoors || 1,
-        addressInfo: data.info ? data.info.split(', ').filter(info => info.trim()) : [''],
+        numberOfDoors: numberOfDoorsFromAPI,
+        addressInfo: infoArray.length > 0 ? infoArray : Array(numberOfDoorsFromAPI).fill(''),
         buildingAddress: data.address || ''
       };
       
-      // Ensure we have at least one door info field
-      if (formDataFromAPI.addressInfo.length === 0) {
-        formDataFromAPI.addressInfo = [''];
-      }
-      
       // Ensure addressInfo array matches numberOfDoors
-      while (formDataFromAPI.addressInfo.length < formDataFromAPI.numberOfDoors) {
-        formDataFromAPI.addressInfo.push('');
+      while (initialFormData.addressInfo.length < initialFormData.numberOfDoors) {
+        initialFormData.addressInfo.push('');
       }
-      
-      setFormData(formDataFromAPI);
-      setOriginalFormData(formDataFromAPI);
-      setPosition([numLat, numLong]);
+      // Trim addressInfo if it's too long
+      initialFormData.addressInfo = initialFormData.addressInfo.slice(0, initialFormData.numberOfDoors);
+
+
+      setFormData(initialFormData);
+      setOriginalFormData(initialFormData); // Store for change detection
+      setOriginalData(data); // Store raw API data
       setIsDataLoaded(true);
       
     } catch (error) {
       console.error('Error loading building data:', error);
       setErrorMessage(`Failed to load building data: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setShowErrorMessage(true);
+      setIsDataLoaded(true); // Still set to true to show error message and form
     } finally {
       setIsLoading(false);
     }
-  }, [buildingId]);
+  }, [buildingId, position]); // Added 'position' to the dependency array
 
   useEffect(() => {
     if (buildingId) {
@@ -220,7 +207,7 @@ const BuildingEditContent: React.FC = () => {
 
   // Check for unsaved changes
   useEffect(() => {
-    if (isDataLoaded) {
+    if (isDataLoaded) { // Only compare once data is loaded
       const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalFormData);
       setHasUnsavedChanges(hasChanges);
     }
@@ -237,52 +224,62 @@ const BuildingEditContent: React.FC = () => {
   };
 
   const handleSave = async (): Promise<boolean> => {
-    if (!position || !buildingId) return false;
-
+    if (!position || !buildingId) {
+      setErrorMessage('GPS coordinates or Building ID are missing.');
+      setShowErrorMessage(true);
+      return false;
+    }
+  
     // Validate form data
     if (!formData.buildingAddress.trim()) {
       setErrorMessage('Please enter a building address');
       setShowErrorMessage(true);
       return false;
     }
-
+  
     // Filter out empty door info and validate
     const validDoorInfo = formData.addressInfo.filter(info => info.trim());
-    if (validDoorInfo.length === 0) {
-      setErrorMessage('Please fill in at least one door information field');
+    if (validDoorInfo.length === 0 && formData.numberOfDoors > 0) { // If numberOfDoors is > 0, info cannot be empty
+      setErrorMessage('Please fill in at least one door information field if number of doors is greater than zero.');
       setShowErrorMessage(true);
       return false;
     }
-
-    if (validDoorInfo.length !== formData.numberOfDoors) {
-      setErrorMessage(`Number of doors (${formData.numberOfDoors}) must match the number of door information fields provided (${validDoorInfo.length})`);
+    
+    // Ensure the number of door info fields provided matches numberOfDoors
+    if (validDoorInfo.length !== formData.numberOfDoors && formData.numberOfDoors > 0) {
+      setErrorMessage(`Number of doors (${formData.numberOfDoors}) must match the number of door information fields provided (${validDoorInfo.length}). Please fill all or adjust number of doors.`);
       setShowErrorMessage(true);
       return false;
     }
-
+  
     setIsLoading(true);
     setShowErrorMessage(false);
     setErrorMessage('');
-
+  
     try {
+      // Send complete data structure matching the POST format
       const apiData = {
         lat: position[0],
         long: position[1],
-        info: validDoorInfo.join(', '),
-        numberOfDoors: formData.numberOfDoors,
         language: formData.language,
-        address: formData.buildingAddress.trim()
+        numberOfDoors: formData.numberOfDoors,
+        info: validDoorInfo.join(', '), // Send only valid info
+        address: formData.buildingAddress.trim(),
+        territory_id: originalData?.territory_id || 1, // Use original or default
+        congregationId: originalData?.congregationId || 2898201 // Use original or default
       };
-
+  
+      console.log('Sending update data:', apiData); // Debug log
+  
       // Try multiple update endpoints
       const possibleEndpoints = [
         `https://gp-sapp2-8ycr.vercel.app/api/door/${buildingId}`,
         `https://gp-sapp2-8ycr.vercel.app/api/buildings/${buildingId}`,
       ];
-
+  
       let success = false;
       let lastError: Error | null = null;
-
+  
       for (const endpoint of possibleEndpoints) {
         try {
           const response = await fetch(endpoint, {
@@ -293,36 +290,42 @@ const BuildingEditContent: React.FC = () => {
             },
             body: JSON.stringify(apiData),
           });
-
+  
           if (response.ok) {
             const result = await response.json();
             console.log('Building updated:', result);
             success = true;
             break;
+          } else {
+            // Log the response for debugging
+            const errorText = await response.text();
+            console.error(`Failed to update at ${endpoint}:`, response.status, errorText);
+            lastError = new Error(`Server responded with ${response.status}: ${errorText}`);
           }
         } catch (error) {
           lastError = error as Error;
+          console.error(`Error with ${endpoint}:`, error);
           continue;
         }
       }
-
+  
       if (!success) {
         throw lastError || new Error('Failed to update building on all endpoints');
       }
-
+  
       setShowSuccessMessage(true);
       setHasUnsavedChanges(false);
       
       // Update original form data to reflect saved state
       setOriginalFormData(formData);
-
+  
       setTimeout(() => {
         setShowSuccessMessage(false);
         router.back();
       }, 2000);
-
+  
       return true;
-
+  
     } catch (error) {
       console.error('Error updating building:', error);
       setErrorMessage(`Failed to update building: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -366,9 +369,14 @@ const BuildingEditContent: React.FC = () => {
           if (response.ok) {
             success = true;
             break;
+          } else {
+            const errorText = await response.text();
+            lastError = new Error(`API error from ${endpoint}: ${response.status} - ${errorText}`);
+            console.warn(lastError.message);
           }
         } catch (error) {
           lastError = error as Error;
+          console.error(`Fetch error for ${endpoint}:`, error);
           continue;
         }
       }
@@ -406,38 +414,40 @@ const BuildingEditContent: React.FC = () => {
   };
 
   const handleFormChange = (field: string, value: string | number, index?: number) => {
-    if (field === 'addressInfo' && typeof index === 'number') {
-      const newAddresses = [...formData.addressInfo];
-      newAddresses[index] = value as string;
-      setFormData(prev => ({
-        ...prev,
-        addressInfo: newAddresses
-      }));
-    } else if (field === 'numberOfDoors') {
-      const newDoorCount = Number(value);
-      const updatedAddresses = [...formData.addressInfo];
-      
-      // Add new empty fields if increasing door count
-      while (updatedAddresses.length < newDoorCount) {
-        updatedAddresses.push('');
+    setFormData(prev => {
+      if (field === 'addressInfo' && typeof index === 'number') {
+        const newAddresses = [...prev.addressInfo];
+        newAddresses[index] = value as string;
+        return {
+          ...prev,
+          addressInfo: newAddresses
+        };
+      } else if (field === 'numberOfDoors') {
+        const newDoorCount = Math.max(0, Number(value)); // Ensure non-negative
+        const updatedAddresses = [...prev.addressInfo];
+        
+        // Add new empty fields if increasing door count
+        while (updatedAddresses.length < newDoorCount) {
+          updatedAddresses.push('');
+        }
+        
+        // Remove fields if decreasing door count
+        while (updatedAddresses.length > newDoorCount) {
+          updatedAddresses.pop();
+        }
+        
+        return {
+          ...prev,
+          numberOfDoors: newDoorCount,
+          addressInfo: updatedAddresses
+        };
+      } else { 
+        return {
+          ...prev,
+          [field]: value as string // Ensure the value is treated as a string for other fields
+        };
       }
-      
-      // Remove fields if decreasing door count
-      while (updatedAddresses.length > newDoorCount) {
-        updatedAddresses.pop();
-      }
-      
-      setFormData(prev => ({
-        ...prev,
-        numberOfDoors: newDoorCount,
-        addressInfo: updatedAddresses
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
+    });
   };
 
   const handleGpsChange = (newGps: string) => {
@@ -457,6 +467,7 @@ const BuildingEditContent: React.FC = () => {
       if (originalData && typeof originalData.lat === 'number' && typeof originalData.long === 'number') {
         setPosition([originalData.lat, originalData.long]);
       }
+      setHasUnsavedChanges(false);
     }
   };
 
@@ -473,7 +484,7 @@ const BuildingEditContent: React.FC = () => {
     );
   }
 
-  if (isLoading && !originalData) {
+  if (isLoading && !isDataLoaded) { // Show loading spinner only when initial data is being fetched
     return (
       <div className="h-screen w-full flex items-center justify-center">
         <div className="text-center">
@@ -484,17 +495,43 @@ const BuildingEditContent: React.FC = () => {
     );
   }
 
-  // Only render the form when we have valid position data
-  if (!position || !isDataLoaded) {
+  // Only render the form when we have valid position data and data is loaded
+  if (!position && isDataLoaded) { // Data loaded but position is invalid/missing
     return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center p-4">
+        <div className="text-center bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <strong className="font-bold">Error!</strong>
+          <span className="block sm:inline"> Unable to load valid GPS coordinates for this building.</span>
+          <span className="block sm:inline"> Please enter them manually or try getting your current location.</span>
+        </div>
+        {/* Render form with default position so user can input manually */}
+        <BuildingForm
+            formData={formData}
+            onFormChange={handleFormChange}
+            onGpsChange={handleGpsChange}
+            position={[13.0827, 80.2707]} // Default to Chennai or a relevant central point
+            onSave={handleSave}
+            onCancel={handleCancel} 
+            isLoading={isLoading}
+            onMapMoveEnd={handleMapMoveEnd}
+            isEditMode={true}
+            buildingId={buildingId ? parseInt(buildingId) : undefined}
+          />
+      </div>
+    );
+  }
+
+  if (!position) { // Should ideally be caught by the above, but as a fallback
+     return (
       <div className="h-screen w-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">Initializing map position...</p>
         </div>
       </div>
     );
   }
+
 
   return (
     <div className="min-h-screen w-full bg-white">
@@ -544,17 +581,23 @@ const BuildingEditContent: React.FC = () => {
 
       {/* Form */}
       <div className="p-4">
-        <BuildingForm
-          formData={formData}
-          onFormChange={handleFormChange}
-          onGpsChange={handleGpsChange}
-          position={position}
-          onSave={handleSave}
-          onCancel={handleCancel} 
-          isLoading={isLoading}
-          onMapMoveEnd={handleMapMoveEnd}
-          isEditMode={true}
-        />
+        {isDataLoaded && position && ( // Ensure data is loaded and position is valid before rendering form
+          <BuildingForm
+            formData={formData}
+            onFormChange={handleFormChange}
+            onGpsChange={handleGpsChange}
+            position={position}
+            onSave={handleSave}
+            onCancel={handleCancel} 
+            isLoading={isLoading}
+            onMapMoveEnd={handleMapMoveEnd}
+            isEditMode={true}
+            buildingId={buildingId ? parseInt(buildingId) : undefined}
+            // Pass original data for territoryId and congregationId if needed by BuildingForm
+            territoryId={originalData?.territory_id}
+            congregationId={originalData?.congregationId}
+          />
+        )}
       </div>
 
       {/* Delete Confirmation Modal */}

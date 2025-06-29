@@ -18,17 +18,26 @@ interface Pin {
   numberOfDoors?: number;
   language?: string;
   info?: string;
+  lat?: number;
+  long?: number;
+  address?: string;
+  pinImage?: string; // Add pinImage to Pin interface
+  pinColor?: number; // Add pinColor to Pin interface
+  congregationId?: number;
 }
 
-// Building interface for API responses
+// Building interface for API responses - ENSURE these match your backend API EXACTLY
 interface Building {
   id: number;
   lat: number;
   long: number;
   address: string;
-  numberOfDoors?: number;
+  numberOfDoors?: string; // Assuming it comes as a string, parse if needed
   language?: string;
   info?: string;
+  congregationId?: number;
+  pinColor?: number; // <<-- IMPORTANT: This must come from your backend
+  pinImage?: string; // <<-- IMPORTANT: This must come from your backend
 }
 
 // Editing interface
@@ -39,13 +48,14 @@ interface EditingBuilding {
   address: string;
   doors: string[];
   language: string;
+  // If you want to edit pinColor/pinImage, you'd add them here too
 }
 
 export default function HomePage() {
   const searchParams = useSearchParams();
   const [isMounted, setIsMounted] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [recentPins, setRecentPins] = useState<Pin[]>([]);
+  const [recentPins, setRecentPins] = useState<Pin[]>([] );
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<EditingBuilding | null>(null);
@@ -116,8 +126,17 @@ export default function HomePage() {
 
   const fetchRecentBuildings = useCallback(async () => {
     try {
+      console.log("[ClientHomePage] Attempting to fetch buildings from API...");
       const res = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door`);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`[ClientHomePage] API fetch failed with status: ${res.status}, response: ${errorText}`);
+        throw new Error(`Failed to fetch buildings: ${res.statusText}`);
+      }
+      
       const data: Building[] = await res.json();
+      console.log("[ClientHomePage] Raw backend data received:", JSON.stringify(data, null, 2));
 
       if (data && Array.isArray(data)) {
         const pins: Pin[] = data.map((building: Building) => ({
@@ -125,17 +144,23 @@ export default function HomePage() {
           position: [building.lat, building.long] as [number, number],
           title: building.address || 'No address',
           doors: building.info ? building.info.split(', ').filter(Boolean) : [],
-          numberOfDoors: building.numberOfDoors || 0,
+          numberOfDoors: building.numberOfDoors ? parseInt(building.numberOfDoors) : undefined,
           language: building.language || 'English',
-          info: building.info
+          info: building.info,
+          pinColor: building.pinColor, 
+          pinImage: building.pinImage, 
+          congregationId: building.congregationId,
         }));
         setRecentPins(pins);
         
         // Process URL parameters after buildings are loaded
         processUrlParameters(pins);
       }
-    } catch (err) {
-      console.error("Failed to load recent buildings:", err);
+    } catch (err: unknown) {
+      console.error("[ClientHomePage] Error fetching buildings (network/parse error):", err);
+      // You might want to display an error message to the user here
+      const errorMessage = err instanceof Error ? err.message : 'Network error';
+      alert(`Error loading buildings: ${errorMessage}`);
     }
   }, [processUrlParameters]);
 
@@ -143,6 +168,17 @@ export default function HomePage() {
   const handlePinClick = useCallback((pin: Pin) => {
     console.log('Pin clicked:', pin);
     setSelectedPin(pin);
+    // Optionally set isEditing to true and populate editingBuilding here
+    setIsEditing(true);
+    setEditingBuilding({
+      id: pin.id,
+      lat: pin.position[0],
+      long: pin.position[1],
+      address: pin.address || '',
+      doors: pin.doors || (pin.info ? pin.info.split(', ').filter(Boolean) : []),
+      language: pin.language || 'English',
+    });
+    setNewDoor(''); // Clear new door input
   }, []);
 
 
@@ -155,67 +191,90 @@ export default function HomePage() {
   };
 
   const saveChanges = async () => {
-    if (!editingBuilding) return;
+    if (!editingBuilding) {
+      console.warn("[ClientHomePage] No building selected for editing.");
+      return;
+    }
+
+    const putUrl = `https://gp-sapp2-8ycr.vercel.app/api/door/${editingBuilding.id}`;
+    const putBody = JSON.stringify({
+      lat: editingBuilding.lat,
+      long: editingBuilding.long,
+      address: editingBuilding.address,
+      info: editingBuilding.doors.join(', '),
+      numberOfDoors: editingBuilding.doors.length,
+      language: editingBuilding.language,
+      congregationId: selectedPin?.congregationId || 2898201, // Ensure it's passed for pin logic
+    });
+    
+
+    console.log(`[ClientHomePage] Sending PUT request to: ${putUrl}`);
+    console.log("[ClientHomePage] PUT request body:", putBody);
 
     try {
-      const response = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${editingBuilding.id}`, {
+      const response = await fetch(putUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          lat: editingBuilding.lat,
-          long: editingBuilding.long,
-          address: editingBuilding.address,
-          info: editingBuilding.doors.join(', '),
-          numberOfDoors: editingBuilding.doors.length,
-          language: editingBuilding.language,
-        }),
+        body: putBody,
       });
 
       if (response.ok) {
-        // Store current map state before updating
-        const currentZoom = mapZoom;
+        console.log(`[ClientHomePage] PUT request successful for ID: ${editingBuilding.id}`);
+        // Re-fetch the specific building to get its updated pinImage/pinColor
+        // This is important because the backend might recalculate or store this.
+        console.log(`[ClientHomePage] Re-fetching building with ID: ${editingBuilding.id} after save.`);
+        const updatedBuildingRes = await fetch(`https://gp-sapp2-8ycr.vercel.app/api/door/${editingBuilding.id}`);
         
-        // Update the pins array
-        const updatedPin = {
-          id: editingBuilding.id,
-          position: [editingBuilding.lat, editingBuilding.long] as [number, number],
-          title: editingBuilding.address,
-          doors: editingBuilding.doors,
-          language: editingBuilding.language,
-          info: editingBuilding.doors.join(', '),
-          numberOfDoors: editingBuilding.doors.length
+        if (!updatedBuildingRes.ok) {
+          const errorText = await updatedBuildingRes.text();
+          console.error(`[ClientHomePage] Failed to re-fetch updated building data: ${updatedBuildingRes.status}, response: ${errorText}`);
+          throw new Error(`Failed to re-fetch updated building data: ${updatedBuildingRes.statusText}`);
+        }
+        
+        const updatedBuildingData: Building = await updatedBuildingRes.json();
+        console.log("[ClientHomePage] Re-fetched updated building data:", JSON.stringify(updatedBuildingData, null, 2));
+
+        const updatedPin: Pin = {
+          id: updatedBuildingData.id,
+          position: [updatedBuildingData.lat, updatedBuildingData.long] as [number, number],
+          title: updatedBuildingData.address || 'No address',
+          doors: updatedBuildingData.info ? updatedBuildingData.info.split(', ').filter(Boolean) : [],
+          numberOfDoors: updatedBuildingData.numberOfDoors ? parseInt(updatedBuildingData.numberOfDoors) : undefined,
+          language: updatedBuildingData.language || 'English',
+          info: updatedBuildingData.info,
+          pinColor: updatedBuildingData.pinColor, 
+          pinImage: updatedBuildingData.pinImage, 
+          congregationId: updatedBuildingData.congregationId,
         };
 
-        // Prevent any auto-fitting during the update
         setShouldAutoFit(false);
-        
-        // Update pins without triggering map changes
         setRecentPins(prevPins => 
           prevPins.map(pin => 
             pin.id === editingBuilding.id ? updatedPin : pin
           )
         );
         
-        // Use setTimeout to ensure state updates are processed first
         setTimeout(() => {
-          // Maintain the current view or focus on edited building
           setMapCenter([editingBuilding.lat, editingBuilding.long]);
-          setMapZoom(Math.max(currentZoom, 16)); // Ensure decent zoom level
+          setMapZoom(Math.max(mapZoom, 16)); 
           setHighlightPinId(editingBuilding.id);
           setSelectedPin(updatedPin);
-          setMapKey(prev => prev + 1); // Force map to re-render with new props
+          setMapKey(prev => prev + 1); 
         }, 100);
         
         cancelEditing();
         alert('Building updated successfully!');
       } else {
-        alert('Failed to update building');
+        const errorBody = await response.text();
+        console.error(`[ClientHomePage] Failed to update building: ${response.status} - ${errorBody}`);
+        alert(`Failed to update building: ${response.statusText || 'Unknown error'}`);
       }
-    } catch (error) {
-      console.error('Error updating building:', error);
-      alert('Error updating building');
+    } catch (error: unknown) {
+      console.error('[ClientHomePage] Error updating building (network or processing):', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network issue';
+      alert(`Error updating building: ${errorMessage}`);
     }
   };
 
@@ -260,10 +319,11 @@ export default function HomePage() {
   };
 
   const handleRefresh = () => {
+    console.log("[ClientHomePage] Refreshing buildings...");
     setHighlightPinId(undefined);
     setSelectedPin(null);
-    setShouldAutoFit(true); // Re-enable auto-fit when refreshing
-    setMapKey(prev => prev + 1); // Force map refresh
+    setShouldAutoFit(true); 
+    setMapKey(prev => prev + 1); 
     fetchRecentBuildings();
   };
 
@@ -276,7 +336,7 @@ export default function HomePage() {
           setUserLocation([position.coords.latitude, position.coords.longitude]);
         },
         (error) => {
-          console.error("Geolocation error:", error);
+          console.error("[ClientHomePage] Geolocation error:", error);
         }
       );
     }
@@ -356,7 +416,7 @@ export default function HomePage() {
       </div>
 
       {/* Edit Modal */}
-      {isEditing && editingBuilding && (
+      {isEditing && selectedPin && ( 
         <div className="absolute inset-0 z-40 bg-black bg-opacity-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
             <div className="p-4 border-b">
@@ -378,16 +438,16 @@ export default function HomePage() {
                   <input
                     type="number"
                     step="any"
-                    value={editingBuilding.lat}
-                    onChange={(e) => updatePosition(parseFloat(e.target.value) || 0, editingBuilding.long)}
+                    value={editingBuilding?.lat || ''} 
+                    onChange={(e) => updatePosition(parseFloat(e.target.value) || 0, editingBuilding?.long || 0)}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
                     placeholder="Latitude"
                   />
                   <input
                     type="number"
                     step="any"
-                    value={editingBuilding.long}
-                    onChange={(e) => updatePosition(editingBuilding.lat, parseFloat(e.target.value) || 0)}
+                    value={editingBuilding?.long || ''} 
+                    onChange={(e) => updatePosition(editingBuilding?.lat || 0, parseFloat(e.target.value) || 0)}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
                     placeholder="Longitude"
                   />
@@ -404,7 +464,7 @@ export default function HomePage() {
                 </label>
                 <input
                   type="text"
-                  value={editingBuilding.address}
+                  value={editingBuilding?.address || ''} 
                   onChange={(e) => updateAddress(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="Enter street address"
@@ -417,7 +477,7 @@ export default function HomePage() {
                   Language
                 </label>
                 <select
-                  value={editingBuilding.language}
+                  value={editingBuilding?.language || 'English'} 
                   onChange={(e) => setEditingBuilding(prev => prev ? { ...prev, language: e.target.value } : null)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
@@ -436,7 +496,7 @@ export default function HomePage() {
                 
                 {/* Existing Doors */}
                 <div className="space-y-2 mb-3">
-                  {editingBuilding.doors.map((door, index) => (
+                  {editingBuilding?.doors.map((door, index) => ( 
                     <div key={index} className="flex items-center space-x-2">
                       <input
                         type="text"
