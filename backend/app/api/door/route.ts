@@ -9,8 +9,9 @@ interface RequestData {
   language?: string;
   numberOfDoors?: number;
   info?: string;
-  address?: string; 
+  address?: string;
   territory_id?: number;
+  congregationId?: number;
 }
 
 interface DoorData {
@@ -21,55 +22,67 @@ interface DoorData {
   id_cong_lang: number;
 }
 
-// Handle OPTIONS preflight requests (for CORS)
-export async function OPTIONS(): Promise<NextResponse> {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
+// Helper to stringify BigInt and format response
+function safeStringify(obj: unknown): string {
+  return JSON.stringify(obj, (_, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  );
 }
 
-// Handle GET requests - fetch from building view
+// GET: Fetch from Building_v_24h view
 export async function GET(): Promise<NextResponse> {
   try {
-    // Fetch from building view instead of direct table join
-    const buildingsFromView = await prisma.building_v_24h.findMany({
-      where: {
-        language: {
-          not: null
-        }
+    // Query the Building_v_24h view that joins with Language table for color
+    const buildings = await prisma.building_v_24h.findMany({
+      select: {
+        id: true,
+        lat: true,
+        long: true,
+        address: true,
+        last_modified: true,
+        numberOfDoors: true,
+        info: true,
+        language: true,
+        congregationId: true,
+        pinColor: true,
+        pinImage: true
       }
     });
 
-    // Transform the view data to match your desired format
-    const buildingsData = buildingsFromView.map(building => ({
-      id: building.id,
-      lat: building.lat,
-      long: building.long,
-      address: building.address,
-      numberOfDoors: Number(building.numberOfDoors) || 0,
-      language: building.language || 'English',
-      info: building.info || undefined,
+    // Transform the data to match your expected output format
+    const transformedBuildings = buildings.map(building => ({
+      id: Number(building.id),
+      lat: Number(building.lat),
+      long: Number(building.long),
+      address: building.address || "Example Address",
+      last_modified: building.last_modified,
+      numberOfDoors: String(building.numberOfDoors || 1),
+      info: building.info || "No info available",
+      language: building.language || "Tamil",
+      congregationId: Number(building.congregationId),
+      pinColor: Number(building.pinColor),
+      pinImage: building.pinImage || "/pins/pin1.png"
     }));
 
-    return new NextResponse(JSON.stringify(buildingsData), {
+    console.log(`Found ${transformedBuildings.length} buildings in last 24 hours`);
+    
+    return new NextResponse(safeStringify(transformedBuildings), {
       status: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
       },
     });
-  } catch (error: unknown) {
+  } catch (error) {
     console.error('GET Error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+    return new NextResponse(JSON.stringify({ 
+      error: 'Internal Server Error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }), {
       status: 500,
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
       },
     });
   } finally {
@@ -77,81 +90,111 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
-// Handle POST requests - create new building
+// POST: Create building + doors
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const bodyText = await request.text();
-
-    if (!bodyText) {
-      return new NextResponse(JSON.stringify({ error: 'Empty request body' }), {
+    const body = await request.text();
+    if (!body) {
+      return new NextResponse(JSON.stringify({ error: 'Empty body' }), {
         status: 400,
         headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json",
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json',
         },
       });
     }
 
-    const data: RequestData = JSON.parse(bodyText) as RequestData;
-    console.log("Received create data:", data);
-
-    const { lat, long, language, numberOfDoors, info, address, territory_id } = data;
+    const data: RequestData = JSON.parse(body);
+    const {
+      lat,
+      long,
+      language = 'Tamil',
+      numberOfDoors = 1,
+      info = '',
+      address = '',
+      territory_id = 1,
+      congregationId = 1,
+    } = data;
 
     if (typeof lat !== 'number' || typeof long !== 'number') {
-      return new NextResponse(JSON.stringify({ error: 'Latitude and Longitude must be numbers' }), {
+      return new NextResponse(JSON.stringify({ error: 'Invalid coordinates' }), {
         status: 400,
         headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json",
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json',
         },
       });
     }
 
-    // Create the building
-    const newBuilding = await prisma.building.create({
+    // Create building with current timestamp
+    const building = await prisma.building.create({
       data: {
         lat,
         long,
-        address: address || null,
-        territory_id: territory_id || 1, // Default territory_id if not provided
+        address,
+        territory_id,
         last_modified: new Date(),
       },
     });
 
-    // Create doors for the building
-    const doorInfoArray = info ? info.split(', ') : [''];
-    const doorsToCreate = Math.max(numberOfDoors || 1, doorInfoArray.length);
-    
-    const doors: DoorData[] = Array.from({ length: doorsToCreate }).map((_, index) => ({
-      language: language ?? 'English',
-      information_name: doorInfoArray[index] || undefined,
-      building_id: newBuilding.idBuilding,
-      id_cong_app: 1,
-      id_cong_lang: 1,
-    }));
+    // Create doors - split info by comma for multiple doors
+    const doorInfoArray = info.split(',').map((i) => i.trim());
+    const doors: DoorData[] = Array.from({ length: Math.max(numberOfDoors, doorInfoArray.length) }).map(
+      (_, i) => ({
+        language,
+        information_name: doorInfoArray[i] || `Door ${i + 1} info`,
+        building_id: building.idBuilding,
+        id_cong_app: congregationId,
+        id_cong_lang: 1, // You may need to adjust this based on your Language table
+      })
+    );
 
     await prisma.door.createMany({ data: doors });
 
-    return new NextResponse(JSON.stringify({ 
-      message: 'Building created successfully',
-      building: newBuilding 
-    }), {
-      status: 201,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-    });
-  } catch (error: unknown) {
+    console.log(`Created building ${building.idBuilding} with ${doors.length} doors`);
+
+    // Return success response
+    return new NextResponse(
+      JSON.stringify({
+        message: 'Building and doors created successfully',
+        buildingId: building.idBuilding,
+        doorsCreated: doors.length,
+        language: language,
+        congregationId: congregationId
+      }),
+      {
+        status: 201,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  } catch (error) {
     console.error('POST Error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+    return new NextResponse(JSON.stringify({ 
+      error: 'Internal Server Error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }), {
       status: 500,
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
       },
     });
   } finally {
     await prisma.$disconnect();
   }
+}
+
+// OPTIONS: Handle CORS preflight
+export async function OPTIONS(): Promise<NextResponse> {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 }
